@@ -3,6 +3,7 @@ import myImg from "../../Assets/avatar.png";
 import Tilt from "react-parallax-tilt";
 import { AiFillGithub, AiFillInstagram } from "react-icons/ai";
 import { FaLinkedinIn } from "react-icons/fa";
+import { NavLink } from "react-router-dom";
 
 function Home2() {
   return (
@@ -14,28 +15,22 @@ function Home2() {
               LET ME <span className="purple"> INTRODUCE </span> MYSELF
             </h1>
             <p className="home-about-body">
-              <br />I am fluent in classics like
-              <i>
-                <b className="purple"> SQL, Node.js, JavaScript and React </b>
-              </i>
+              I found my way into programming after years in hospitality - and I am still learning
+              every day!🤓
+              <br />
+              <br />I am comfortable with the essentials like{" "}
+              <b className="purple">JavaScript, React, Node.js, and SQL</b>. I am especially
+              passionate about back-end development and building web apps that solve real problems.
               <br />
               <br />
-              My field of Interest's are building new &nbsp;
-              <i>
-                <b className="purple">Web Technologies and Products </b> and also in areas related
-                to <b className="purple">Blockchain.</b>
-              </i>
-              <br />
-              <br />
-              Whenever possible, I also apply my passion for developing products with{""}
-              <b className="purple"> Node.js</b> and
-              <i>
-                <b className="purple"> Modern Javascript Library and Frameworks</b>
-              </i>
-              &nbsp; like
-              <i>
-                <b className="purple"> React.js and Next.js</b>
-              </i>
+              Lately, I have been diving into new tools like{" "}
+              <b className="purple"> Next.js, NestJS, and MongoDB</b> to keep growing and building
+              better projects. This little intro is perfect for a quick snapshot - the longer
+              version we crafted works great for the{" "}
+              <NavLink to="/about" className="purple" style={{ textDecoration: "none" }}>
+                <b>About</b>
+              </NavLink>{" "}
+              section.
             </p>
           </Col>
           <Col md={4} className="myAvtar">
