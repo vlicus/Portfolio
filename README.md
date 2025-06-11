@@ -2,7 +2,7 @@
   Portfolio<br/>
   <a href="https://samuel-cobas-portfolio.vercel.app/" target="_blank">Samuel Cobas</a>
 </h2>
-
+<img src="Images/metaimg.png" alt="Preview Website" >
 <br/>
 
 <h3 align="center">
