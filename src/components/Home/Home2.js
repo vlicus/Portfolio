@@ -24,9 +24,13 @@ function Home2() {
               <br />
               <br />
               Lately, I have been diving into new tools like{" "}
-              <b className="purple"> Next.js, NestJS, and MongoDB</b> to keep growing and building
-              better projects. This little intro is perfect for a quick snapshot - the longer
-              version we crafted works great for the{" "}
+              <b className="purple"> Next.js, NestJS, and MongoDB</b> and applying solid practices
+              like <b className="purple"> Git branching strategies</b> and the{" "}
+              <b className="purple"> SOLID</b> principles to keep leveling up.
+              <br />
+              <br />
+              This little intro is perfect for a quick snapshot - the longer version we crafted
+              works great for the{" "}
               <NavLink to="/about" className="purple" style={{ textDecoration: "none" }}>
                 <b>About</b>
               </NavLink>{" "}
