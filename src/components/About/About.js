@@ -1,4 +1,3 @@
-import React from "react";
 import { Container, Row, Col } from "react-bootstrap";
 import Particle from "../Particle";
 import Github from "./Github";
@@ -26,11 +25,7 @@ function About() {
             </h1>
             <Aboutcard />
           </Col>
-          <Col
-            md={5}
-            style={{ paddingTop: "120px", paddingBottom: "50px" }}
-            className="about-img"
-          >
+          <Col md={5} style={{ paddingTop: "400px", paddingBottom: "50px" }} className="about-img">
             <img src={laptopImg} alt="about" className="img-fluid" />
           </Col>
         </Row>
