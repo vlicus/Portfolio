@@ -1,8 +1,7 @@
-import React from "react";
 import { Container, Row, Col } from "react-bootstrap";
 import myImg from "../../Assets/avatar.png";
 import Tilt from "react-parallax-tilt";
-import { AiFillGithub, AiOutlineTwitter, AiFillInstagram } from "react-icons/ai";
+import { AiFillGithub, AiFillInstagram } from "react-icons/ai";
 import { FaLinkedinIn } from "react-icons/fa";
 
 function Home2() {
@@ -15,8 +14,6 @@ function Home2() {
               LET ME <span className="purple"> INTRODUCE </span> MYSELF
             </h1>
             <p className="home-about-body">
-              I fell in love with programming and I have at least learnt something, I think… 🤷‍♂️
-              <br />
               <br />I am fluent in classics like
               <i>
                 <b className="purple"> SQL, Node.js, JavaScript and React </b>
@@ -30,8 +27,8 @@ function Home2() {
               </i>
               <br />
               <br />
-              Whenever possible, I also apply my passion for developing products with{" "}
-              <b className="purple">Node.js</b> and
+              Whenever possible, I also apply my passion for developing products with{""}
+              <b className="purple"> Node.js</b> and
               <i>
                 <b className="purple"> Modern Javascript Library and Frameworks</b>
               </i>
