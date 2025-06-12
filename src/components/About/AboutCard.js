@@ -30,7 +30,7 @@ function AboutCard() {
             <br />
             <br /> Right now, I am focused on growing as a developer, building cool stuff, and
             expanding my skills by learning new stacks like{" "}
-            <b className="purple">Next.js, NestJS</b>, non-relational databases such as{" "}
+            <b className="purple">Typescript, Next.js, NestJS</b>, non-relational databases such as{" "}
             <b className="purple">MongoDB</b> and testing with the use of{" "}
             <b className="purple">Vitest</b>. I am also actively looking for my first opportunity in
             tech. Thanks for stopping by - feel free to check out my projects!
