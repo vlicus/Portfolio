@@ -24,14 +24,15 @@ function AboutCard() {
             curiosity, and problem-solving is something I have carried into everything I do.
             <br />
             <br /> More recently, I completed a full-stack web development bootcamp, where I worked
-            with <b className="purple">JavaScript, Node.js, React, Express, and MySQL</b>. I have
-            realized that backend development is where I feel most at home - I love building the
-            logic and structure behind the scenes.
+            with <b className="purple">JavaScript</b>,<b className="purple"> Node.js</b>,
+            <b className="purple"> React</b>,<b className="purple"> Express</b>, and
+            <b className="purple"> MySQL</b>. I have realized that backend development is where I
+            feel most at home - I love building the logic and structure behind the scenes.
             <br />
             <br /> Right now, I am focused on growing as a developer, building cool stuff, and
-            expanding my skills by learning new stacks like{" "}
-            <b className="purple">Typescript, Next.js, NestJS</b>, non-relational databases such as{" "}
-            <b className="purple">MongoDB</b> and testing with the use of{" "}
+            expanding my skills by learning new stacks like <b className="purple">Typescript</b>,
+            <b className="purple"> Next.js</b>, <b className="purple">NestJS</b>, non-relational
+            databases such as <b className="purple">MongoDB</b> and testing with the use of{" "}
             <b className="purple">Vitest</b>. I am also actively looking for my first opportunity in
             tech. Thanks for stopping by - feel free to check out my projects!
             <br />
