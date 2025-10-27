@@ -2,6 +2,7 @@ import React from "react";
 import { Col, Row } from "react-bootstrap";
 import { SiVisualstudiocode, SiPostman, SiSlack, SiVercel } from "react-icons/si";
 import { FaUbuntu } from "react-icons/fa";
+import { FaFigma } from "react-icons/fa";
 
 function Toolstack() {
   return (
@@ -20,6 +21,9 @@ function Toolstack() {
       </Col>
       <Col xs={4} md={2} className="tech-icons">
         <SiVercel />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <FaFigma />
       </Col>
     </Row>
   );

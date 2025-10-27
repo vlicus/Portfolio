@@ -18,23 +18,36 @@ function AboutCard() {
             took me in a different direction - I moved to London, worked in hospitality for several
             years, and eventually ran a busy bar.
             <br />
-            <br /> Somewhere along the way, I realized I still wanted to follow that tech path. So,
-            while managing a full-time job, I also studied{" "}
-            <b className="purple">Computer Science </b> full-time - and that mix of discipline,
-            curiosity, and problem-solving is something I have carried into everything I do.
             <br />
-            <br /> More recently, I completed a full-stack web development bootcamp, where I worked
-            with <b className="purple">JavaScript</b>,<b className="purple"> Node.js</b>,
-            <b className="purple"> React</b>,<b className="purple"> Express</b>, and
-            <b className="purple"> MySQL</b>. I have realized that backend development is where I
-            feel most at home - I love building the logic and structure behind the scenes.
+            Somewhere along the way, I realized I still wanted to follow that tech path. So, while
+            managing a full-time job, I also studied <b className="purple">Computer Science</b>{" "}
+            full-time - and that mix of discipline, curiosity, and problem-solving is something I
+            have carried into everything I do.
             <br />
-            <br /> Right now, I am focused on growing as a developer, building cool stuff, and
-            expanding my skills by learning new stacks like <b className="purple">Typescript</b>,
-            <b className="purple"> Next.js</b>, <b className="purple">NestJS</b>, non-relational
-            databases such as <b className="purple">MongoDB</b> and testing with the use of{" "}
-            <b className="purple">Vitest</b>. I am also actively looking for my first opportunity in
-            tech. Thanks for stopping by - feel free to check out my projects!
+            <br />
+            Later, I completed a full-stack web development bootcamp, where I built applications
+            using <b className="purple">JavaScript</b>, <b className="purple">Node.js</b>,{" "}
+            <b className="purple">React</b>, <b className="purple">Express</b>, and{" "}
+            <b className="purple">MySQL</b>. That’s when I discovered my passion for{" "}
+            <b className="purple">frontend development</b> — creating intuitive, functional, and
+            visually consistent interfaces.
+            <br />
+            <br />
+            More recently, I worked as a <b className="purple">Frontend Developer</b>, contributing
+            to the development and refactoring of web applications built with{" "}
+            <b className="purple">ReactJS</b>, <b className="purple">Next.js</b>,{" "}
+            <b className="purple">TailwindCSS</b>, and <b className="purple">REST APIs</b>. I
+            collaborated within an agile team, implemented <b className="purple">Figma</b> designs,
+            and improved existing codebases to deliver cleaner, more maintainable, and scalable
+            solutions.
+            <br />
+            <br />
+            Right now, I am focused on growing as a developer, building cool stuff, and expanding my
+            skills by learning new stacks like <b className="purple">TypeScript</b>,{" "}
+            <b className="purple">Next.js</b>, <b className="purple">NestJS</b>, non-relational
+            databases such as <b className="purple">MongoDB</b>, and testing with{" "}
+            <b className="purple">Vitest</b>. I am also actively looking for my next opportunity in
+            tech. Thanks for stopping by — feel free to check out my projects!
             <br />
             <br />
             <br />

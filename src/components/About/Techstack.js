@@ -1,6 +1,11 @@
 import { Col, Row } from "react-bootstrap";
-import { DiJavascript1, DiReact, DiNodejs } from "react-icons/di";
-import { TbSql } from "react-icons/tb";
+import { DiJavascript1, DiNodejs } from "react-icons/di";
+import { TbSql, TbBrandTypescript, TbBrandNextjs } from "react-icons/tb";
+import { SiMongodb } from "react-icons/si";
+import { GrReactjs } from "react-icons/gr";
+import { SiTailwindcss } from "react-icons/si";
+import { SiVitest } from "react-icons/si";
+import { SiGraphql } from "react-icons/si";
 
 function Techstack() {
   return (
@@ -12,10 +17,28 @@ function Techstack() {
         <DiNodejs style={{ paddingBottom: "10px" }} />
       </Col>
       <Col xs={4} md={2} className="tech-icons">
-        <DiReact />
+        <GrReactjs />
       </Col>
       <Col xs={4} md={2} className="tech-icons">
         <TbSql />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <TbBrandTypescript />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <TbBrandNextjs />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <SiMongodb />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <SiTailwindcss />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <SiGraphql />
+      </Col>
+      <Col xs={4} md={2} className="tech-icons">
+        <SiVitest />
       </Col>
     </Row>
   );

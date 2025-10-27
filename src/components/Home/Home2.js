@@ -15,28 +15,32 @@ function Home2() {
               LET ME <span className="purple"> INTRODUCE </span> MYSELF
             </h1>
             <p className="home-about-body">
-              I found my way into programming after years in hospitality - and I am still learning
-              every day!🤓
-              <br />
-              <br />I am comfortable with the essentials like{" "}
-              <b className="purple">JavaScript, React, Node.js, and SQL</b>. I am especially
-              passionate about back-end development and building web apps that solve real problems.
+              I found my way into programming after years in hospitality — and I’m still learning
+              and building every day! 🤓
               <br />
               <br />
-              Lately, I have been diving into new tools like{" "}
-              <b className="purple"> Next.js, NestJS, and MongoDB</b> and applying solid practices
-              like <b className="purple"> Git branching strategies</b> and the{" "}
-              <b className="purple"> SOLID</b> principles to keep leveling up.
+              I’m comfortable working with the essentials like{" "}
+              <b className="purple">JavaScript, React, Node.js, and SQL</b>, and I’m especially
+              passionate about <b className="purple">frontend development</b> — creating intuitive,
+              functional, and visually consistent web applications.
               <br />
               <br />
-              This little intro is perfect for a quick snapshot - the longer version we crafted
-              works great for the{" "}
+              Lately, I’ve been exploring modern tools like{" "}
+              <b className="purple">Next.js, NestJS, and MongoDB</b> while applying best practices
+              such as <b className="purple">Git branching strategies</b> and the{" "}
+              <b className="purple">SOLID</b> principles to write clean, scalable, and maintainable
+              code.
+              <br />
+              <br />
+              This quick intro gives a snapshot of my journey — the longer version works great for
+              the{" "}
               <NavLink to="/about" className="purple" style={{ textDecoration: "none" }}>
                 <b>About</b>
               </NavLink>{" "}
               section.
             </p>
           </Col>
+
           <Col md={4} className="myAvtar">
             <Tilt>
               <img
