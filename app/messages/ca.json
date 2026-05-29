@@ -1,0 +1,126 @@
+{
+	"metadata": {
+		"siteTitle": "Samuel Cobas Portfolio",
+		"siteDescription": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV.",
+		"siteKeywords": "Samuel Cobas, desenvolupador frontend, portfoli, React, TypeScript, TanStack Query, TanStack Form",
+		"siteAuthor": "Samuel Cobas",
+		"siteUrl": "https://samuel-cobas-portfolio.vercel.app",
+		"ogImageAlt": "Imatge de previsualització del portfolio de Samuel Cobas",
+		"pages": {
+			"home": {
+				"title": "Samuel Cobas Portfolio",
+				"description": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV.",
+				"path": "/"
+			},
+			"about": {
+				"title": "Sobre mi",
+				"description": "Context, stack principal, orientació cap a QA i trajectòria de Samuel Cobas dins l’enginyeria frontend de producte.",
+				"path": "/about"
+			},
+			"projects": {
+				"title": "Projectes",
+				"description": "Projectes seleccionats de frontend, XR i lliurament de producte desenvolupats per Samuel Cobas.",
+				"path": "/project"
+			},
+			"resume": {
+				"title": "CV",
+				"description": "Resum del CV i descàrrega del document de Samuel Cobas, amb experiència, stack i responsabilitats que s’estan ampliant.",
+				"path": "/resume"
+			}
+		}
+	},
+	"site": {
+		"siteLabel": "Portfoli",
+		"navigationLabels": {
+			"home": "Inici",
+			"about": "Sobre mi",
+			"projects": "Projectes",
+			"resume": "CV"
+		},
+		"homeHero": {
+			"eyebrow": "Hola, soc Samuel Cobas",
+			"title": "Enginyer frontend centrat a construir experiències de producte fiables amb React i TypeScript.",
+			"description": "Treballo entre frontend i full-stack, amb especial atenció a codi React mantenible, interfícies cuidades i decisions de producte que funcionin bé en entorns reals.",
+			"roles": ["Enginyer Frontend", "React, TanStack Query i Forms", "Enginyer de Programari", "Col·laborador orientat a API i QA"],
+			"primaryCtaLabel": "Coneix-me millor",
+			"secondaryCtaLabel": "Veure el codi",
+			"illustrationAlt": "Il·lustració de Samuel Cobas treballant al seu escriptori"
+		},
+		"homeAbout": {
+			"eyebrow": "Sobre mi",
+			"title": "Vaig passar de l’hostaleria al software i m’hi vaig quedar per la combinació d’ofici, visió de sistemes i resolució de problemes de producte.",
+			"paragraphs": [
+				"Construeixo funcionalitats orientades a producte amb JavaScript, TypeScript, React, Node.js i SQL, i cada vegada treballo més amb TanStack Query i fluxos de formularis estructurats quan milloren la fiabilitat i l’experiència de desenvolupament.",
+				"A mesura que l’equip creixi, també espero assumir més responsabilitat en QA. La meva experiència pràctica avui se centra en proves d’API amb Postman i endpoints de Next.js documentats amb Swagger, validant comportaments, casos límit i l’alineació entre frontend i backend."
+			],
+			"portraitAlt": "Retrat de Samuel Cobas"
+		},
+		"header": {
+			"logoAlt": "Logotip de Samuel Cobas",
+			"primaryNavLabel": "Navegació principal",
+			"mobileNavLabel": "Navegació mòbil",
+			"sourceLabel": "Codi",
+			"languageLabel": "Idioma",
+			"openMenuLabel": "Obrir el menú de navegació",
+			"closeMenuLabel": "Tancar el menú de navegació"
+		},
+		"footer": {
+			"credit": "Dissenyat i desenvolupat per Samuel Cobas",
+			"copyrightSuffix": "SB",
+			"externalProfileSuffix": "s’obre en una pestanya nova"
+		},
+		"notFound": {
+			"eyebrow": "404",
+			"title": "Pàgina no trobada",
+			"description": "La ruta que has demanat no existeix. Pots tornar a l’inici o anar a una altra secció del portfoli.",
+			"goHomeLabel": "Tornar a l’inici"
+		},
+		"skipToContentLabel": "Anar directament al contingut principal",
+		"externalProfileLabel": "perfil"
+	},
+	"about": {
+		"eyebrow": "Sobre mi",
+		"title": "Què puc aportar més enllà de la landing.",
+		"paragraphs": [
+			"Vaig entrar al software després d’anys a l’hostaleria i hi vaig trobar el tipus de feina que vull continuar fent: resoldre problemes, millorar sistemes i construir interfícies clares, fiables i útils.",
+			"El meu focus principal és l’enginyeria frontend amb React i TypeScript, però també treballo còmodament a tot l’stack quan això ajuda a lliurar un millor producte. Això inclou UI amb estat, integració d’APIs, fluxos de dades amb TanStack Query i treball estructurat amb formularis.",
+			"A mesura que evolucionin el producte i l’equip, també espero assumir més responsabilitat en QA. La meva experiència pràctica avui se centra en proves d’API amb Postman i endpoints de Next.js documentats amb Swagger, posant el focus en el comportament, els casos límit i l’alineació entre frontend i backend."
+		],
+		"skillsTitle": "Stack principal",
+		"toolsTitle": "Eines i flux de QA",
+		"skills": ["JavaScript", "TypeScript", "React", "Next.js", "TanStack Query", "TanStack Form", "Node.js", "SQL", "MongoDB", "Proves d’API"],
+		"tools": ["VS Code", "GitHub", "Postman", "Swagger / OpenAPI", "Figma", "MySQL Workbench", "Conceptes bàsics de Docker"],
+		"illustrationAlt": "Il·lustració per a la secció sobre mi"
+	},
+	"resume": {
+		"intro": {
+			"eyebrow": "CV",
+			"title": "CV i descàrrega en un únic lloc.",
+			"description": "Consulta el resum aquí o obre el PDF complet quan vulguis veure el document sencer."
+		},
+		"download": {
+			"title": "Descarregar el CV de Samuel Cobas",
+			"description": "Obre el PDF actual en una pestanya nova o desa’l localment.",
+			"label": "Descarregar CV",
+			"ariaLabel": "Descarregar el CV de Samuel Cobas en PDF en una pestanya nova"
+		}
+	},
+	"projects": {
+		"page": {
+			"eyebrow": "Projectes",
+			"title": "Treball seleccionat en frontend, XR i lliurament de producte.",
+			"description": "Aquests projectes reflecteixen el tipus de feina que més m’agrada: interfícies cuidades, pensament de sistemes clar i execució end-to-end pràctica."
+		},
+		"labels": {
+			"source": "Codi",
+			"liveDemo": "Demo en viu",
+			"sourceAriaSuffix": "codi font (s’obre en una pestanya nova)",
+			"liveDemoAriaSuffix": "demo en viu (s’obre en una pestanya nova)"
+		},
+		"descriptions": {
+			"pokefinder": "Una aplicació web en JavaScript que carrega dades de Pokemon des de la PokeAPI, permet una cerca ràpida i mostra perfils detallats amb estadístiques i imatges.",
+			"lsbuVrTour": "Una experiència de campus al navegador construïda amb A-Frame i WebXR, pensada perquè els usuaris explorin espais universitaris amb escenes immersives de 360 graus.",
+			"secureRent": "Una plataforma full-stack de lloguer que connecta propietaris i inquilins mitjançant autenticació, gestió d’anuncis, senyals de confiança i fluxos d’administració."
+		}
+	}
+}

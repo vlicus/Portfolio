@@ -1,15 +1,19 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
-  "icons": [
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    }
-  ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+	"id": "/",
+	"name": "Samuel Cobas Portfolio",
+	"short_name": "Samuel Cobas",
+	"description": "Portfolio site with selected projects, background, and resume.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#140f23",
+	"theme_color": "#140f23",
+	"icons": [
+		{
+			"src": "/favicon.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any maskable"
+		}
+	]
 }

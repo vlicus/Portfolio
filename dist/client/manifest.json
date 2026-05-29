@@ -1,0 +1,19 @@
+{
+	"id": "/",
+	"name": "Samuel Cobas Portfolio",
+	"short_name": "Samuel Cobas",
+	"description": "Portfolio site with selected projects, background, and resume.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#140f23",
+	"theme_color": "#140f23",
+	"icons": [
+		{
+			"src": "/favicon.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any maskable"
+		}
+	]
+}

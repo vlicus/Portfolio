@@ -1,0 +1,9 @@
+allowBuilds:
+  '@parcel/watcher': true
+  '@tsparticles/engine': true
+  core-js: false
+  core-js-pure: false
+  esbuild: true
+  msw: true
+  react-tsparticles: false
+  tsparticles: false

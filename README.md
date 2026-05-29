@@ -1,51 +1,40 @@
-<h2 align="center">
-  Portfolio<br/>
-  <a href="https://samuel-cobas-portfolio.vercel.app/" target="_blank">Samuel Cobas</a>
-</h2>
-<img src="Images/metaimg.png" alt="Preview Website" >
-<br/>
+# Samuel Cobas Portfolio
 
-<h3 align="center">
-    🔹
-    <a href="https://github.com/vlicus/Portfolio/issues">Report Bug</a> &nbsp; &nbsp;
-    🔹
-    <a href="https://github.com/vlicus/Portfolio/issues">Request Feature</a>
-</h3>
+Portfolio application built with TanStack Start, React 19, Tailwind CSS, and shadcn/ui primitives. The active app lives under `app/`. The `src/` and `legacy/` folders remain only as migration leftovers.
 
-## Built With
+![Preview Website](Images/metaimg.png)
 
-My personal portfolio <a href="https://samuel-cobas-portfolio.vercel.app/" target="_blank">Samuel Cobas</a> which features some of my github projects as well as my resume, technical skills and some more info about me!.<br/>
+## Stack
 
-This project was built using these technologies.
+- TanStack Start with a Vite-based build pipeline
+- React 19
+- TypeScript
+- Tailwind CSS
+- shadcn/ui and Radix primitives
 
-- React.js
-- CSS3
-- VsCode
-- Vercel
+## Available Scripts
 
-## Features
+- `pnpm dev` starts the main app on port `3002`.
+- `pnpm build` creates the production build.
+- `pnpm smoke` builds the app and checks the main routes plus their page metadata.
+- `pnpm start` serves the built app with `vite preview`.
+- `pnpm typecheck` runs the TypeScript checker.
+- `pnpm dev:legacy` runs the old legacy app on port `3003` while migration cleanup is still in progress.
 
-**📖 Multi-Page Layout**
+## Project Structure
 
-**🎨 Styled with React-Bootstrap and Css with easy to customize colors**
+- `app/` contains the current TanStack Start application.
+- `app/components/` contains the reusable UI used by the migrated routes.
+- `app/routes/` contains the file-based route modules.
+- `app/lib/` contains app content, assets, and utilities.
+- `src/` and `legacy/` are retained temporarily for the legacy implementation.
 
-**📱 Fully Responsive**
+## Development Notes
 
-## 🛠 Installation and Setup Instructions
-
-1. Installation: `npm install` to install the needed dependencies 😄
-
-2. In the project directory, run: `npm start` to launch the project! 🚀
-
-Run the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.\
-The page will reload if there is any modification in the code!.
-
-## Usage Instructions
-
-Open the project folder and Navigate to `/src/components/`. <br/>
-You will find all the components used and you can edit your information accordingly.
+- If you are updating the active portfolio, start in `app/`, not `src/`.
+- App-owned assets now live in `app/assets/`.
+- The repository uses `pnpm` as the package manager.
 
 ## Credit
 
-Credit to [Soumyajit4419](https://github.com/soumyajit4419/Portfolio). Thanks!
+Original portfolio inspiration: [Soumyajit4419/Portfolio](https://github.com/Soumyajit4419/Portfolio).

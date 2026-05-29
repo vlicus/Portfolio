@@ -1,0 +1,8 @@
+export { default as aboutImage } from '../assets/about.png'
+export { default as avatarImage } from '../assets/avatar.png'
+export { default as homeIllustration } from '../assets/home-main.svg'
+export { default as logoImage } from '../assets/logo.png'
+export { default as resumeFile } from '../assets/curriculum_Vitae_Samuel_Cobas.pdf'
+export { default as alquilerSeguroImage } from '../assets/Projects/Alquiler_Seguro_Laptop.png'
+export { default as pokeFinderImage } from '../assets/Projects/Pokefinder_Laptop.png'
+export { default as vrTourImage } from '../assets/Projects/VR_tour_Laptop.png'
