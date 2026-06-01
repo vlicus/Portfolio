@@ -1,1 +1,0 @@
-import{a as c,c as m,j as o}from"./index-Del3ezhn.js";function x(n){const e=c.c(5),{children:l,className:a}=n;let s;e[0]!==a?(s=m("mx-auto flex w-full flex-col px-6 py-14 sm:px-10 sm:py-20",a),e[0]=a,e[1]=s):s=e[1];let t;return e[2]!==l||e[3]!==s?(t=o.jsx("main",{id:"main-content",className:s,children:l}),e[2]=l,e[3]=s,e[4]=t):t=e[4],t}export{x as P};

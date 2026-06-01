@@ -41,18 +41,18 @@ export function SiteHeader() {
 	}
 
 	return (
-		<header className='sticky top-0 z-50 px-4 pt-4 sm:px-6'>
+		<header className='sticky top-0 z-50 px-3 pt-3 sm:px-6 sm:pt-4'>
 			<div
 				className={cn(
-					'mx-auto flex w-full max-w-6xl flex-col rounded-[1.5rem] border border-white/10 bg-stone-950/75 px-4 py-3 shadow-lg shadow-black/20 backdrop-blur transition sm:px-6',
+					'mx-auto flex w-full max-w-6xl flex-col rounded-[1.5rem] border border-white/10 bg-stone-950/75 px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur transition sm:px-6 sm:py-3',
 					isScrolled && 'border-cyan-300/15 bg-stone-950/90 shadow-2xl shadow-cyan-950/10'
 				)}>
 				<div className='flex items-center justify-between gap-4'>
-					<Link className='flex items-center gap-3' search={localizedSearch} to='/'>
-						<img alt={logoAlt} className='h-10 w-10 rounded-full border border-white/10 bg-white/5 object-contain p-1' src={logoImage} />
-						<div>
-							<p className='text-sm font-semibold tracking-wide text-white'>{personName}</p>
-							<p className='text-xs uppercase tracking-[0.25em] text-stone-400'>{siteLabel}</p>
+					<Link className='flex min-w-0 items-center gap-2 sm:gap-3' search={localizedSearch} to='/'>
+						<img alt={logoAlt} className='h-9 w-9 rounded-full border border-white/10 bg-white/5 object-contain p-1 sm:h-10 sm:w-10' src={logoImage} />
+						<div className='min-w-0'>
+							<p className='truncate text-sm font-semibold tracking-wide text-white'>{personName}</p>
+							<p className='hidden text-xs uppercase tracking-[0.25em] text-stone-400 sm:block'>{siteLabel}</p>
 						</div>
 					</Link>
 

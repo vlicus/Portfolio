@@ -1,22 +1,21 @@
 import { useTranslations } from '@/lib/messages'
 import { footerLinks, personName } from '@/lib/site'
 
-const year = new Date().getFullYear()
-
 export function SiteFooter() {
 	const { footer } = useTranslations().site
+	const year = new Date().getFullYear()
 
 	return (
 		<footer className='border-t border-white/10 pt-8 text-sm text-stone-300'>
 			<div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-				<div className='space-y-1'>
+				<div className='space-y-1 text-center sm:text-left'>
 					<p className='font-medium text-white'>{footer.credit}</p>
 					<p>
 						Copyright © {year} {footer.copyrightSuffix}
 					</p>
 				</div>
 
-				<div className='flex items-center gap-3'>
+				<div className='flex items-center justify-center gap-3 sm:justify-start'>
 					{footerLinks.map(({ label, href, icon: Icon }) => (
 						<a
 							key={label}

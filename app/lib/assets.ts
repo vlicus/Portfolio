@@ -6,3 +6,4 @@ export { default as resumeFile } from '../assets/curriculum_Vitae_Samuel_Cobas.p
 export { default as alquilerSeguroImage } from '../assets/Projects/Alquiler_Seguro_Laptop.png'
 export { default as pokeFinderImage } from '../assets/Projects/Pokefinder_Laptop.png'
 export { default as vrTourImage } from '../assets/Projects/VR_tour_Laptop.png'
+export { default as cvImage } from '../assets/curriculum_vitae_Samuel_Cobas.webp'

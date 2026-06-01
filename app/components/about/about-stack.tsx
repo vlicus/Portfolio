@@ -30,12 +30,12 @@ export function AboutStack() {
 
 	return (
 		<section className='grid gap-6 lg:grid-cols-2'>
-			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 backdrop-blur'>
+			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
 				<h2 className='text-2xl font-semibold text-white'>{about.skillsTitle}</h2>
 				<PillList items={about.skills} tone='accent' />
 			</div>
 
-			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 backdrop-blur'>
+			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
 				<h2 className='text-2xl font-semibold text-white'>{about.toolsTitle}</h2>
 				<PillList items={about.tools} tone='muted' />
 			</div>

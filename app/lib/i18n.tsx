@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { useRouter, useRouterState } from '@tanstack/react-router'
 
+import type { RootSearch } from '@/lib/locale'
 import { getLocaleFromSearch, localeOptions, type Locale, type LocaleOption } from '@/lib/locale'
 
 type I18nContextValue = {
@@ -19,11 +20,13 @@ export function I18nProvider({ children }: Readonly<{ children: ReactNode }>) {
 	const locale = getLocaleFromSearch(searchStr)
 
 	function setLocale(nextLocale: Locale) {
-		const { pathname, searchStr: currentSearch } = router.state.location
-		const params = new URLSearchParams(currentSearch)
-		params.set('lang', nextLocale)
+		const { pathname } = router.state.location
 		void router.navigate({
-			href: `${pathname}?${params.toString()}`,
+			to: pathname,
+			search: previous => ({
+				...(previous as RootSearch),
+				lang: nextLocale
+			}),
 			replace: true
 		})
 	}

@@ -95,14 +95,16 @@
 	"resume": {
 		"intro": {
 			"eyebrow": "CV",
-			"title": "CV i descàrrega en un únic lloc.",
-			"description": "Consulta el resum aquí o obre el PDF complet quan vulguis veure el document sencer."
+			"title": "Vista prèvia del CV i accés al document complet en un únic lloc.",
+			"description": "Fes servir la targeta amb la foto com a entrada visual ràpida i obre el PDF complet només quan realment vulguis consultar el document sencer."
 		},
 		"download": {
-			"title": "Descarregar el CV de Samuel Cobas",
-			"description": "Obre el PDF actual en una pestanya nova o desa’l localment.",
-			"label": "Descarregar CV",
-			"ariaLabel": "Descarregar el CV de Samuel Cobas en PDF en una pestanya nova"
+			"title": "Obrir el CV de Samuel Cobas",
+			"description": "Fes clic a la foto per obrir el PDF actual en una pestanya nova i descarregar-lo només si realment necessites el fitxer.",
+			"label": "Obrir PDF del CV",
+			"ariaLabel": "Obrir el CV de Samuel Cobas en PDF en una pestanya nova",
+			"previewAlt": "Retrat de Samuel Cobas utilitzat com a targeta de vista prèvia del CV",
+			"tooltip": "Fes clic per obrir el PDF del CV"
 		}
 	},
 	"projects": {

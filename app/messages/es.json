@@ -95,14 +95,16 @@
 	"resume": {
 		"intro": {
 			"eyebrow": "CV",
-			"title": "CV y descarga en un único lugar.",
-			"description": "Consulta el resumen aquí o abre el PDF completo cuando quieras ver el documento entero."
+			"title": "Vista previa del CV y acceso al documento completo en un único lugar.",
+			"description": "Usa la tarjeta con la foto como acceso visual rápido y abre el PDF completo solo cuando realmente quieras consultar el documento entero."
 		},
 		"download": {
-			"title": "Descargar el CV de Samuel Cobas",
-			"description": "Abre el PDF actual en una pestaña nueva o guárdalo localmente.",
-			"label": "Descargar CV",
-			"ariaLabel": "Descargar el CV de Samuel Cobas en PDF en una pestaña nueva"
+			"title": "Abrir el CV de Samuel Cobas",
+			"description": "Haz clic en la foto para abrir el PDF actual en una pestaña nueva y descargarlo solo si de verdad necesitas el archivo.",
+			"label": "Abrir PDF del CV",
+			"ariaLabel": "Abrir el CV de Samuel Cobas en PDF en una pestaña nueva",
+			"previewAlt": "Retrato de Samuel Cobas usado como tarjeta de vista previa del CV",
+			"tooltip": "Haz clic para abrir el PDF del CV"
 		}
 	},
 	"projects": {

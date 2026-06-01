@@ -1,30 +1,42 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+const rootDir = dirname(dirname(fileURLToPath(import.meta.url)))
 const port = 4173
 const baseUrl = `http://127.0.0.1:${port}`
 
-const checks = [
-	{
-		path: '/',
-		title: 'Samuel Cobas Portfolio',
-		description: 'Product-minded frontend developer portfolio with selected projects, background, and resume.'
-	},
-	{
-		path: '/about',
-		title: 'About | Samuel Cobas Portfolio',
-		description: 'Background, core stack, QA direction, and the path Samuel Cobas took into frontend-focused product engineering.'
-	},
-	{
-		path: '/project',
-		title: 'Projects | Samuel Cobas Portfolio',
-		description: 'Selected frontend, XR, and product-delivery projects built by Samuel Cobas.'
-	},
-	{
-		path: '/resume',
-		title: 'Resume | Samuel Cobas Portfolio',
-		description: 'Resume overview and downloadable CV for Samuel Cobas, covering experience, stack, and next-step responsibilities.'
+const locales = ['en', 'ca', 'es']
+
+const routePageKeys = {
+	'/': 'home',
+	'/about': 'about',
+	'/project': 'projects',
+	'/resume': 'resume'
+}
+
+function loadMessages(locale) {
+	const raw = readFileSync(join(rootDir, 'app', 'messages', `${locale}.json`), 'utf-8')
+	return JSON.parse(raw)
+}
+
+function buildChecks() {
+	const checks = []
+	for (const locale of locales) {
+		const messages = loadMessages(locale)
+		const { siteTitle } = messages.metadata
+		const langParam = locale === 'en' ? '' : `?lang=${locale}`
+		for (const [path, key] of Object.entries(routePageKeys)) {
+			const page = messages.metadata.pages[key]
+			const title = page.title === siteTitle ? page.title : `${page.title} | ${siteTitle}`
+			checks.push({ path: `${path}${langParam}`, title, description: page.description })
+		}
 	}
-]
+	return checks
+}
+
+const checks = buildChecks()
 
 function wait(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms))
@@ -88,7 +100,7 @@ try {
 		assertIncludes(html, `content="${check.description}"`, `${check.path} description`)
 	}
 
-	console.log('Smoke route checks passed.')
+	console.log(`Smoke route checks passed (${checks.length} checks across ${locales.length} locales).`)
 } finally {
 	stopPreview()
 }

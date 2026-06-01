@@ -1,22 +1,13 @@
-import { defaultLocale, type Locale } from '@/lib/locale'
+import { localizePath, type Locale } from '@/lib/locale'
 import { getMessages } from '@/lib/messages'
 
-type PageMetadata = {
-	title: string
-	description: string
-	path: string
-}
+export type PageKey = 'home' | 'about' | 'projects' | 'resume'
 
 export function getRootMetadata(locale: Locale) {
 	const metadata = getMessages(locale).metadata
 
 	return {
-		siteTitle: metadata.siteTitle,
-		siteDescription: metadata.siteDescription,
-		siteKeywords: metadata.siteKeywords,
-		siteAuthor: metadata.siteAuthor,
-		siteUrl: metadata.siteUrl,
-		ogImageAlt: metadata.ogImageAlt,
+		...metadata,
 		ogImageUrl: `${metadata.siteUrl}/og-image.png`
 	}
 }
@@ -25,49 +16,59 @@ export function getPageMetadata(locale: Locale) {
 	return getMessages(locale).metadata.pages
 }
 
-export function getPageMetadataByPath(locale: Locale, path: string) {
-	const metadata = getPageMetadata(locale)
-	const basePath = path
-
-	if (basePath === '/about') {
-		return metadata.about
-	}
-
-	if (basePath === '/project') {
-		return metadata.projects
-	}
-
-	if (basePath === '/resume') {
-		return metadata.resume
-	}
-
-	return metadata.home
+const pageKeyByPath: Partial<Record<string, PageKey>> = {
+	'/about': 'about',
+	'/project': 'projects',
+	'/resume': 'resume'
 }
 
-const defaultRootMetadata = getRootMetadata(defaultLocale)
+export function getPageMetadataByPath(locale: Locale, path: string) {
+	const meta = getPageMetadata(locale)
+	const key = pageKeyByPath[path] ?? 'home'
+	return meta[key]
+}
 
-export const siteTitle = defaultRootMetadata.siteTitle
-export const siteDescription = defaultRootMetadata.siteDescription
-export const siteUrl = defaultRootMetadata.siteUrl
-export const ogImageUrl = defaultRootMetadata.ogImageUrl
-export const siteKeywords = defaultRootMetadata.siteKeywords
-export const siteAuthor = defaultRootMetadata.siteAuthor
-export const ogImageAlt = defaultRootMetadata.ogImageAlt
-export const pageMetadata = getPageMetadata(defaultLocale)
+export function createRootHead(locale: Locale) {
+	const rootMeta = getRootMetadata(locale)
 
-export function createPageHead({ title, description, path = '/' }: PageMetadata) {
-	const pageUrl = new URL(path, siteUrl).toString()
-	const pageTitle = title === siteTitle ? title : `${title} | ${siteTitle}`
+	return {
+		meta: [
+			{ charSet: 'utf-8' },
+			{ name: 'viewport', content: 'width=device-width, initial-scale=1' },
+			{ name: 'theme-color', content: '#140f23' },
+			{ title: rootMeta.siteTitle },
+			{ name: 'keywords', content: rootMeta.siteKeywords },
+			{ name: 'author', content: rootMeta.siteAuthor },
+			{ property: 'og:type', content: 'website' },
+			{ property: 'og:site_name', content: rootMeta.siteTitle },
+			{ property: 'og:image', content: rootMeta.ogImageUrl },
+			{ property: 'og:image:alt', content: rootMeta.ogImageAlt },
+			{ name: 'twitter:card', content: 'summary_large_image' },
+			{ name: 'twitter:image', content: rootMeta.ogImageUrl }
+		],
+		links: [
+			{ rel: 'icon', href: '/favicon.png', type: 'image/png' },
+			{ rel: 'apple-touch-icon', href: '/favicon.png' },
+			{ rel: 'manifest', href: '/manifest.json' }
+		]
+	}
+}
+
+export function createPageHead(locale: Locale, path: string, pageKey: PageKey) {
+	const rootMeta = getRootMetadata(locale)
+	const pageMeta = getPageMetadata(locale)[pageKey]
+	const pageTitle = pageMeta.title === rootMeta.siteTitle ? pageMeta.title : `${pageMeta.title} | ${rootMeta.siteTitle}`
+	const pageUrl = new URL(localizePath(path, locale, ''), rootMeta.siteUrl).toString()
 
 	return {
 		meta: [
 			{ title: pageTitle },
-			{ name: 'description', content: description },
+			{ name: 'description', content: pageMeta.description },
 			{ property: 'og:title', content: pageTitle },
-			{ property: 'og:description', content: description },
+			{ property: 'og:description', content: pageMeta.description },
 			{ property: 'og:url', content: pageUrl },
 			{ name: 'twitter:title', content: pageTitle },
-			{ name: 'twitter:description', content: description }
+			{ name: 'twitter:description', content: pageMeta.description }
 		],
 		links: [{ rel: 'canonical', href: pageUrl }]
 	}

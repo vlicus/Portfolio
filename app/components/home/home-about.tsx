@@ -7,11 +7,11 @@ export function HomeAbout() {
 	return (
 		<section
 			id='about'
-			className='grid gap-8 rounded-[2rem] border border-white/10 bg-black/10 p-6 backdrop-blur sm:p-8 lg:grid-cols-[minmax(0,1.1fr)_20rem] lg:gap-12'>
+			className='grid gap-8 rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-xl shadow-slate-950/30 backdrop-blur sm:p-8 lg:grid-cols-[minmax(0,1.1fr)_20rem] lg:gap-12'>
 			<div className='space-y-5'>
 				<p className='text-sm font-medium uppercase tracking-[0.3em] text-cyan-300'>{homeAbout.eyebrow}</p>
-				<h2 className='text-3xl font-semibold tracking-tight text-white sm:text-4xl'>{homeAbout.title}</h2>
-				<div className='space-y-4 text-base leading-7 text-stone-300'>
+				<h2 className='max-w-3xl text-3xl font-semibold tracking-tight text-white sm:text-4xl'>{homeAbout.title}</h2>
+				<div className='max-w-2xl space-y-4 text-base leading-7 text-stone-300'>
 					{homeAbout.paragraphs.map(paragraph => (
 						<p key={paragraph}>{paragraph}</p>
 					))}

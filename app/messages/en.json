@@ -95,14 +95,16 @@
 	"resume": {
 		"intro": {
 			"eyebrow": "Resume",
-			"title": "Resume and download access in one place.",
-			"description": "Browse the summary here or open the full PDF when you want the complete document."
+			"title": "Resume preview and full CV access in one place.",
+			"description": "Use the portrait card as a quick visual entry point, then open the full PDF when you want the complete document."
 		},
 		"download": {
-			"title": "Download Samuel Cobas CV",
-			"description": "Open the current PDF in a new tab or save it locally.",
-			"label": "Download CV",
-			"ariaLabel": "Download Samuel Cobas CV as a PDF in a new tab"
+			"title": "Open Samuel Cobas CV",
+			"description": "Click the portrait to open the current PDF in a new tab and download it only if you actually need the file.",
+			"label": "Open CV PDF",
+			"ariaLabel": "Open Samuel Cobas CV as a PDF in a new tab",
+			"previewAlt": "Portrait of Samuel Cobas used as the resume preview card",
+			"tooltip": "Click to open the CV PDF"
 		}
 	},
 	"projects": {

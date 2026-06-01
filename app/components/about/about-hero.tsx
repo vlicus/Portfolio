@@ -8,8 +8,8 @@ export function AboutHero() {
 		<section className='grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] lg:items-center'>
 			<div className='space-y-5'>
 				<p className='text-sm font-medium uppercase tracking-[0.3em] text-cyan-300'>{about.eyebrow}</p>
-				<h1 className='text-4xl font-semibold tracking-tight text-white sm:text-5xl'>{about.title}</h1>
-				<div className='space-y-4 text-base leading-7 text-stone-300'>
+				<h1 className='max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl'>{about.title}</h1>
+				<div className='max-w-2xl space-y-4 text-base leading-7 text-stone-300'>
 					{about.paragraphs.map(paragraph => (
 						<p key={paragraph}>{paragraph}</p>
 					))}

@@ -1,0 +1,1 @@
+import{b as c,c as m,j as o}from"./index-DxIO09tY.js";function x(a){const e=c.c(5),{children:l,className:n}=a;let s;e[0]!==n?(s=m("mx-auto flex w-full flex-col px-6 py-14 sm:px-10 sm:py-20",n),e[0]=n,e[1]=s):s=e[1];let t;return e[2]!==l||e[3]!==s?(t=o.jsx("main",{id:"main-content",className:s,children:l}),e[2]=l,e[3]=s,e[4]=t):t=e[4],t}export{x as P};

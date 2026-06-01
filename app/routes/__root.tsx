@@ -1,23 +1,16 @@
 import type { ReactNode } from 'react'
 import '../styles/global.css'
-import { HeadContent, Link, Outlet, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router'
+import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 
 import { SiteHeader } from '@/components/site-header'
 import { I18nProvider, useI18n } from '@/lib/i18n'
-import { localizePath, validateRootSearch } from '@/lib/locale'
+import { defaultLocale, validateRootSearch } from '@/lib/locale'
 import { useTranslations } from '@/lib/messages'
-import { getPageMetadataByPath, getRootMetadata } from '@/lib/metadata'
+import { createRootHead } from '@/lib/metadata'
 
 export const Route = createRootRoute({
 	validateSearch: validateRootSearch,
-	head: () => ({
-		meta: [{ charSet: 'utf-8' }, { name: 'viewport', content: 'width=device-width, initial-scale=1' }, { name: 'theme-color', content: '#140f23' }],
-		links: [
-			{ rel: 'icon', href: '/favicon.png', type: 'image/png' },
-			{ rel: 'apple-touch-icon', href: '/favicon.png' },
-			{ rel: 'manifest', href: '/manifest.json' }
-		]
-	}),
+	head: () => createRootHead(defaultLocale),
 	notFoundComponent: NotFoundPage,
 	component: RootComponent
 })
@@ -40,7 +33,6 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 		<html lang={locale} className='dark'>
 			<head>
 				<HeadContent />
-				<LocalizedHead />
 			</head>
 			<body className='min-h-screen bg-stone-950 text-stone-100 antialiased'>
 				<a
@@ -55,41 +47,6 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 				<Scripts />
 			</body>
 		</html>
-	)
-}
-
-function LocalizedHead() {
-	const { locale } = useI18n()
-	const { pathname, search } = useRouterState({
-		select: state => ({
-			pathname: state.location.pathname,
-			search: state.location.searchStr
-		})
-	})
-	const rootMetadata = getRootMetadata(locale)
-	const pageMetadata = getPageMetadataByPath(locale, pathname)
-	const pageTitle = pageMetadata.title === rootMetadata.siteTitle ? pageMetadata.title : `${pageMetadata.title} | ${rootMetadata.siteTitle}`
-	const pageUrl = new URL(localizePath(pathname, locale, search), rootMetadata.siteUrl).toString()
-
-	return (
-		<>
-			<title>{pageTitle}</title>
-			<meta content={pageMetadata.description} name='description' />
-			<meta content={rootMetadata.siteKeywords} name='keywords' />
-			<meta content={rootMetadata.siteAuthor} name='author' />
-			<meta content='website' property='og:type' />
-			<meta content={rootMetadata.siteTitle} property='og:site_name' />
-			<meta content={pageTitle} property='og:title' />
-			<meta content={pageMetadata.description} property='og:description' />
-			<meta content={pageUrl} property='og:url' />
-			<meta content={rootMetadata.ogImageUrl} property='og:image' />
-			<meta content={rootMetadata.ogImageAlt} property='og:image:alt' />
-			<meta content='summary_large_image' name='twitter:card' />
-			<meta content={pageTitle} name='twitter:title' />
-			<meta content={pageMetadata.description} name='twitter:description' />
-			<meta content={rootMetadata.ogImageUrl} name='twitter:image' />
-			<link href={pageUrl} rel='canonical' />
-		</>
 	)
 }
 
