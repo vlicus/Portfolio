@@ -5,14 +5,22 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 export function ResumePanel() {
 	const { resume } = useTranslations()
 	const { download: resumeDownload, intro: resumeIntro } = resume
-	const { eyebrow, title } = resumeIntro
+	const { eyebrow, title, description, highlights } = resumeIntro
 	const { ariaLabel, previewAlt, tooltip } = resumeDownload
 
 	return (
-		<section className='grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] lg:items-center'>
-			<div className='space-y-5'>
+		<section className='grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] '>
+			<div className='space-y-5 '>
 				<p className='text-sm font-medium uppercase tracking-[0.3em] text-cyan-300'>{eyebrow}</p>
 				<h1 className='max-w-md text-4xl font-semibold tracking-tight text-white sm:text-5xl'>{title}</h1>
+				<p className='max-w-xl text-base leading-7 text-stone-300'>{description}</p>
+				<ul className='flex flex-col items-start gap-3 text-sm text-stone-200 sm:grid-cols-2'>
+					{highlights.map(highlight => (
+						<li key={highlight} className='border-l border-cyan-300/50 pl-3'>
+							{highlight}
+						</li>
+					))}
+				</ul>
 			</div>
 
 			<div>

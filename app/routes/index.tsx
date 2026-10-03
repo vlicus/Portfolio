@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { HomeAbout } from '@/components/home/home-about'
 import { HomeHero } from '@/components/home/home-hero'
 import { Page } from '@/components/page-shell'
-import { SiteFooter } from '@/components/site-footer'
 import { defaultLocale, validateRootSearch } from '@/lib/locale'
 import { createPageHead } from '@/lib/metadata'
 
@@ -19,7 +18,6 @@ function HomePage() {
 		<Page className='max-w-6xl gap-16'>
 			<HomeHero />
 			<HomeAbout />
-			<SiteFooter />
 		</Page>
 	)
 }

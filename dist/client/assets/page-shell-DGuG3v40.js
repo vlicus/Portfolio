@@ -1,1 +1,0 @@
-import{a as m,h as o,j as c}from"./index-DlxmDsu0.js";function x(n){const e=m.c(5),{children:a,className:l}=n;let s;e[0]!==l?(s=o("mx-auto flex w-full flex-col px-6 py-14 sm:px-10 sm:py-20",l),e[0]=l,e[1]=s):s=e[1];let t;return e[2]!==a||e[3]!==s?(t=c.jsx("main",{id:"main-content",className:s,children:a}),e[2]=a,e[3]=s,e[4]=t):t=e[4],t}export{x as P};

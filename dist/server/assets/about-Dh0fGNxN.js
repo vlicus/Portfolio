@@ -1,9 +1,9 @@
 import { jsxs, jsx } from "react/jsx-runtime";
-import { u as useTranslations, e as cn } from "./router-DivKTyu2.js";
-import { P as Page } from "./page-shell-ikbNTwR-.js";
+import { u as useTranslations, d as cn } from "./router-Cwi49Ojv.js";
+import { P as Page } from "./page-shell-B9f6p8u-.js";
 import "@tanstack/react-router";
-import "react";
 import "lucide-react";
+import "react";
 import "class-variance-authority";
 import "@radix-ui/react-slot";
 import "clsx";
@@ -12,13 +12,14 @@ import "@radix-ui/react-select";
 const aboutImage = "/assets/about-FEa5sPAK.png";
 function AboutHero() {
   const { about } = useTranslations();
+  const { title, illustrationAlt, paragraphs, eyebrow } = about;
   return /* @__PURE__ */ jsxs("section", { className: "grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] lg:items-center", children: [
     /* @__PURE__ */ jsxs("div", { className: "space-y-5", children: [
-      /* @__PURE__ */ jsx("p", { className: "text-sm font-medium uppercase tracking-[0.3em] text-cyan-300", children: about.eyebrow }),
-      /* @__PURE__ */ jsx("h1", { className: "max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl", children: about.title }),
-      /* @__PURE__ */ jsx("div", { className: "max-w-2xl space-y-4 text-base leading-7 text-stone-300", children: about.paragraphs.map((paragraph) => /* @__PURE__ */ jsx("p", { children: paragraph }, paragraph)) })
+      /* @__PURE__ */ jsx("p", { className: "text-sm font-medium uppercase tracking-[0.3em] text-cyan-300", children: eyebrow }),
+      /* @__PURE__ */ jsx("h1", { className: "max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl", children: title }),
+      /* @__PURE__ */ jsx("div", { className: "max-w-2xl space-y-4 text-base leading-7 text-stone-300", children: paragraphs.map((paragraph) => /* @__PURE__ */ jsx("p", { children: paragraph }, paragraph)) })
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-xl shadow-slate-950/30 backdrop-blur", children: /* @__PURE__ */ jsx("img", { alt: about.illustrationAlt, className: "w-full object-contain", decoding: "async", loading: "lazy", src: aboutImage }) })
+    /* @__PURE__ */ jsx("div", { className: "overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-xl shadow-slate-950/30 backdrop-blur", children: /* @__PURE__ */ jsx("img", { alt: illustrationAlt, className: "w-full object-contain", decoding: "async", loading: "lazy", src: aboutImage }) })
   ] });
 }
 function PillList(context) {
@@ -27,8 +28,8 @@ function PillList(context) {
     "li",
     {
       className: cn(
-        tone === "accent" && "rounded-full border border-cyan-300/15 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-50",
-        tone === "muted" && "rounded-full border border-white/10 bg-black/20 px-4 py-2 text-sm text-stone-200"
+        tone === "accent" && "rounded-full pointer-events-none border border-cyan-300/15 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-50",
+        tone === "muted" && "rounded-full pointer-events-none border border-white/10 bg-black/20 px-4 py-2 text-sm text-stone-200"
       ),
       children: item
     },

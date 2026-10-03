@@ -1,7 +1,7 @@
 {
 	"metadata": {
 		"siteTitle": "Samuel Cobas Portfolio",
-		"siteDescription": "Product-minded frontend developer portfolio with selected projects, background, and resume.",
+		"siteDescription": "Product-minded frontend developer portfolio with selected projects, background, and resume",
 		"siteKeywords": "Samuel Cobas, frontend developer, portfolio, React, TypeScript, TanStack Query, TanStack Form",
 		"siteAuthor": "Samuel Cobas",
 		"siteUrl": "https://samuel-cobas-portfolio.vercel.app",
@@ -9,22 +9,22 @@
 		"pages": {
 			"home": {
 				"title": "Samuel Cobas Portfolio",
-				"description": "Product-minded frontend developer portfolio with selected projects, background, and resume.",
+				"description": "Product-minded frontend developer portfolio with selected projects, background, and resume",
 				"path": "/"
 			},
 			"about": {
 				"title": "About",
-				"description": "Background, core stack, QA direction, and the path Samuel Cobas took into frontend-focused product engineering.",
+				"description": "Core stack, product thinking, quality practices, and the approach Samuel Cobas brings to frontend development",
 				"path": "/about"
 			},
 			"projects": {
 				"title": "Projects",
-				"description": "Selected frontend, XR, and product-delivery projects built by Samuel Cobas.",
+				"description": "Selected frontend, XR, and product-delivery projects built by Samuel Cobas",
 				"path": "/project"
 			},
 			"resume": {
 				"title": "Resume",
-				"description": "Resume overview and downloadable CV for Samuel Cobas, covering experience, stack, and next-step responsibilities.",
+				"description": "Resume overview and downloadable CV for Samuel Cobas, covering experience, stack, and next-step responsibilities",
 				"path": "/resume"
 			}
 		}
@@ -39,20 +39,17 @@
 		},
 		"homeHero": {
 			"eyebrow": "Hi there, I'm Samuel Cobas",
-			"title": "Frontend-focused engineer building reliable product experiences with React and TypeScript.",
-			"description": "I work across frontend and full-stack delivery, with a strong emphasis on maintainable React code, thoughtful interfaces, and product decisions that hold up in production.",
-			"roles": ["Frontend Engineer", "React, TanStack Query & Forms", "Software Engineer", "API & QA-aware Collaborator"],
+			"title": "Frontend developer building reliable product experiences",
+			"description": "I build product-facing features with a focus on maintainable code, clear interfaces, quality, and the needs of real users",
+			"roles": ["Frontend Developer", "React, TypeScript & TanStack", "Product-minded Developer", "QA-aware Collaborator"],
 			"primaryCtaLabel": "Get to know me",
 			"secondaryCtaLabel": "View source",
 			"illustrationAlt": "Illustration representing Samuel Cobas working at his desk"
 		},
 		"homeAbout": {
-			"eyebrow": "About",
-			"title": "I moved into software from hospitality and stayed for the mix of craft, systems thinking, and product problem solving.",
-			"paragraphs": [
-				"I build product-facing features with JavaScript, TypeScript, React, Node.js, and SQL, and I am increasingly working with TanStack Query and structured form flows where they improve reliability and developer experience.",
-				"As the team grows, I also expect to take on more QA ownership. My hands-on QA work today is focused on API testing with Postman and Swagger-documented Next.js endpoints, validating behavior, edge cases, and frontend-backend alignment."
-			],
+			"eyebrow": "At a glance",
+			"title": "Frontend development with product thinking and a focus on reliable delivery",
+			"paragraphs": ["I build clear, maintainable interfaces with React and TypeScript while keeping user needs, quality, and the wider product flow in view"],
 			"portraitAlt": "Portrait of Samuel Cobas"
 		},
 		"header": {
@@ -67,12 +64,14 @@
 		"footer": {
 			"credit": "Designed and developed by Samuel Cobas",
 			"copyrightSuffix": "SB",
+			"contactLabel": "Contact",
+			"email": "samu.cobas.ort@gmail.com",
 			"externalProfileSuffix": "opens in a new tab"
 		},
 		"notFound": {
 			"eyebrow": "404",
 			"title": "Page not found",
-			"description": "The route you requested does not exist. You can return to the home page or jump to another section of the portfolio.",
+			"description": "The route you requested does not exist. You can return to the home page or jump to another section of the portfolio",
 			"goHomeLabel": "Go home"
 		},
 		"skipToContentLabel": "Skip to main content",
@@ -80,27 +79,34 @@
 	},
 	"about": {
 		"eyebrow": "About",
-		"title": "What I bring beyond the landing page.",
+		"title": "What I bring beyond the interface",
 		"paragraphs": [
-			"I moved into software after years in hospitality and found the kind of work I want to keep doing: solving problems, improving systems, and building interfaces that feel clear, reliable, and useful.",
-			"My core focus is frontend engineering with React and TypeScript, but I work comfortably across the stack when that helps ship a better product. That includes stateful UI, API integration, TanStack Query data flows, and structured form work.",
-			"As the product and team evolve, I also expect to take on more QA responsibility. My practical QA experience today is centered on API testing with Postman and Swagger-documented Next.js endpoints, where I focus on validating behavior, edge cases, and frontend-backend alignment."
+			"Frontend development is my core focus, with React and TypeScript at the center. I also work with API integrations, Postman, and foundational SQL and MongoDB knowledge when a feature crosses the frontend boundary",
+			"With early-career professional experience, I contribute across implementation, UX refinement, testing, documentation, and support while keeping the product and its users in view",
+			"I organize the work, review designs and user flows, clarify open questions, propose an approach, implement the feature, and test the result with Vitest and Playwright. I also work with Git through focused atomic branches",
+			"I collaborate with design on UX improvements, with product on the clearest user flow, and with QA through direct application testing. When a feature is unclear, I review it with design first, then technical leadership and product"
 		],
 		"skillsTitle": "Core stack",
 		"toolsTitle": "Tools and QA workflow",
-		"skills": ["JavaScript", "TypeScript", "React", "Next.js", "TanStack Query", "TanStack Form", "Node.js", "SQL", "MongoDB", "API testing"],
-		"tools": ["VS Code", "GitHub", "Postman", "Swagger / OpenAPI", "Figma", "MySQL Workbench", "Docker basics"],
+		"skills": ["JavaScript", "TypeScript", "React", "Nextjs", "TanStack Query", "TanStack Form", "Nodejs", "SQL", "MongoDB", "API testing"],
+		"tools": ["VS Code", "GitHub", "Vitest", "Playwright", "Postman", "Swagger / OpenAPI", "Figma", "MySQL Workbench", "Docker basics", "Git atomic branches"],
 		"illustrationAlt": "Illustration for the about section"
 	},
 	"resume": {
 		"intro": {
 			"eyebrow": "Resume",
-			"title": "Resume preview and full CV access in one place.",
-			"description": "Use the portrait card as a quick visual entry point, then open the full PDF when you want the complete document."
+			"title": "Frontend Developer profile and CV access in one place",
+			"description": "Frontend Developer focused on React and TypeScript, with hands-on experience in UX refinement, API testing, and reliable product delivery",
+			"highlights": [
+				"React and TypeScript frontend development",
+				"UX-focused product thinking",
+				"Vitest and Playwright testing",
+				"API testing with Postman and foundational SQL and MongoDB knowledge"
+			]
 		},
 		"download": {
 			"title": "Open Samuel Cobas CV",
-			"description": "Click the portrait to open the current PDF in a new tab and download it only if you actually need the file.",
+			"description": "Click the portrait to open the current PDF in a new tab and download it only if you actually need the file",
 			"label": "Open CV PDF",
 			"ariaLabel": "Open Samuel Cobas CV as a PDF in a new tab",
 			"previewAlt": "Portrait of Samuel Cobas used as the resume preview card",
@@ -110,8 +116,8 @@
 	"projects": {
 		"page": {
 			"eyebrow": "Projects",
-			"title": "Selected work across frontend, XR, and product delivery.",
-			"description": "These projects reflect the kind of work I enjoy most: polished interfaces, clear systems thinking, and practical end-to-end execution."
+			"title": "Selected work across frontend, XR, and product delivery",
+			"description": "These projects reflect the kind of work I enjoy most: polished interfaces, clear systems thinking, and practical end-to-end execution"
 		},
 		"labels": {
 			"source": "Source",
@@ -120,9 +126,9 @@
 			"liveDemoAriaSuffix": "live demo (opens in a new tab)"
 		},
 		"descriptions": {
-			"pokefinder": "A JavaScript web app that loads Pokemon data from the PokeAPI, supports fast search, and surfaces detailed profiles with stats and imagery.",
-			"lsbuVrTour": "A browser-based campus experience built with A-Frame and WebXR, designed to let users explore university spaces through immersive 360 scenes.",
-			"secureRent": "A full-stack rental platform connecting property owners and tenants through authentication, listing management, trust signals, and admin workflows."
+			"pokefinder": "A JavaScript web app that loads Pokemon data from the PokeAPI, supports fast search, and surfaces detailed profiles with stats and imagery",
+			"lsbuVrTour": "A browser-based campus experience built with A-Frame and WebXR, designed to let users explore university spaces through immersive 360 scenes",
+			"secureRent": "A full-stack rental platform connecting property owners and tenants through authentication, listing management, trust signals, and admin workflows"
 		}
 	}
 }

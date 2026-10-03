@@ -9,7 +9,7 @@ import { SITE_HEADER_SCROLL_OFFSET_PX, SITE_NAV_ITEMS } from '../lib/constants'
 import { useI18n } from '@/lib/i18n'
 import { normalizeLocale } from '@/lib/locale'
 import { useTranslations } from '@/lib/messages'
-import { personName, portfolioRepoUrl } from '@/lib/site'
+import { name, portfolioRepoUrl } from '@/lib/site'
 import { cn } from '@/lib/utils'
 
 const navIcons = {
@@ -101,7 +101,7 @@ export function SiteHeader() {
 					<Link className='flex min-w-0 items-center gap-2 sm:gap-3' onClick={() => setIsOpen(false)} search={localizedSearch} to='/'>
 						{/* <img alt={logoAlt} className='h-9 w-9 rounded-full border border-white/10 bg-white/5 object-contain p-1 sm:h-10 sm:w-10' src={logoImage} /> */}
 						<div className='min-w-0'>
-							<p className='truncate text-sm font-semibold tracking-wide text-white'>{personName}</p>
+							<p className='truncate text-sm font-semibold tracking-wide text-white'>{name}</p>
 							<p className='hidden text-xs uppercase tracking-[0.25em] text-stone-400 sm:block'>{siteLabel}</p>
 						</div>
 					</Link>

@@ -1,5 +1,6 @@
+import { Mail } from 'lucide-react'
 import { useTranslations } from '@/lib/messages'
-import { footerLinks, personName } from '@/lib/site'
+import { footerLinks, name } from '@/lib/site'
 
 export function SiteFooter() {
 	const { footer } = useTranslations().site
@@ -16,10 +17,17 @@ export function SiteFooter() {
 				</div>
 
 				<div className='flex items-center justify-center gap-3 sm:justify-start'>
+					<a
+						aria-label={`${footer.contactLabel}: ${footer.email}`}
+						className='inline-flex size-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-stone-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 hover:text-cyan-100'
+						href={`mailto:${footer.email}`}
+						title={footer.email}>
+						<Mail className='size-4' />
+					</a>
 					{footerLinks.map(({ label, href, icon: Icon }) => (
 						<a
 							key={label}
-							aria-label={`${personName} on ${label} (${footer.externalProfileSuffix})`}
+							aria-label={`${name} on ${label} (${footer.externalProfileSuffix})`}
 							className='inline-flex size-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-stone-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 hover:text-cyan-100'
 							href={href}
 							rel='noopener noreferrer'

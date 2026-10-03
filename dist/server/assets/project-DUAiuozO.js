@@ -1,7 +1,7 @@
 import { jsxs, jsx } from "react/jsx-runtime";
-import { P as Page } from "./page-shell-ikbNTwR-.js";
+import { P as Page } from "./page-shell-B9f6p8u-.js";
 import { Code2, ArrowUpRight } from "lucide-react";
-import { u as useTranslations } from "./router-DivKTyu2.js";
+import { u as useTranslations } from "./router-Cwi49Ojv.js";
 import "@tanstack/react-router";
 import "react";
 import "class-variance-authority";

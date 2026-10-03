@@ -1,7 +1,7 @@
 {
 	"metadata": {
 		"siteTitle": "Samuel Cobas Portfolio",
-		"siteDescription": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV.",
+		"siteDescription": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV",
 		"siteKeywords": "Samuel Cobas, desenvolupador frontend, portfoli, React, TypeScript, TanStack Query, TanStack Form",
 		"siteAuthor": "Samuel Cobas",
 		"siteUrl": "https://samuel-cobas-portfolio.vercel.app",
@@ -9,22 +9,22 @@
 		"pages": {
 			"home": {
 				"title": "Samuel Cobas Portfolio",
-				"description": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV.",
+				"description": "Portfoli de desenvolupament frontend orientat a producte amb projectes seleccionats, context professional i CV",
 				"path": "/"
 			},
 			"about": {
 				"title": "Sobre mi",
-				"description": "Context, stack principal, orientació cap a QA i trajectòria de Samuel Cobas dins l’enginyeria frontend de producte.",
+				"description": "Stack principal, pensament de producte, pràctiques de qualitat i enfocament de Samuel Cobas en el desenvolupament frontend",
 				"path": "/about"
 			},
 			"projects": {
 				"title": "Projectes",
-				"description": "Projectes seleccionats de frontend, XR i lliurament de producte desenvolupats per Samuel Cobas.",
+				"description": "Projectes seleccionats de frontend, XR i lliurament de producte desenvolupats per Samuel Cobas",
 				"path": "/project"
 			},
 			"resume": {
 				"title": "CV",
-				"description": "Resum del CV i descàrrega del document de Samuel Cobas, amb experiència, stack i responsabilitats que s’estan ampliant.",
+				"description": "Resum del CV i descàrrega del document de Samuel Cobas, amb experiència, stack i responsabilitats que s’estan ampliant",
 				"path": "/resume"
 			}
 		}
@@ -39,19 +39,18 @@
 		},
 		"homeHero": {
 			"eyebrow": "Hola, soc Samuel Cobas",
-			"title": "Enginyer frontend centrat a construir experiències de producte fiables amb React i TypeScript.",
-			"description": "Treballo entre frontend i full-stack, amb especial atenció a codi React mantenible, interfícies cuidades i decisions de producte que funcionin bé en entorns reals.",
-			"roles": ["Enginyer Frontend", "React, TanStack Query i Forms", "Enginyer de Programari", "Col·laborador orientat a API i QA"],
+			"title": "Desenvolupador frontend centrat a construir productes digitals fiables amb React i TypeScript",
+			"description": "Construeixo funcionalitats orientades a producte amb focus en codi mantenible, interfícies clares, qualitat i necessitats reals de les persones usuàries",
+			"roles": ["Desenvolupador Frontend", "React, TypeScript i TanStack", "Desenvolupador orientat a producte", "Col·laborador amb mentalitat QA"],
 			"primaryCtaLabel": "Coneix-me millor",
 			"secondaryCtaLabel": "Veure el codi",
 			"illustrationAlt": "Il·lustració de Samuel Cobas treballant al seu escriptori"
 		},
 		"homeAbout": {
-			"eyebrow": "Sobre mi",
-			"title": "Vaig passar de l’hostaleria al software i m’hi vaig quedar per la combinació d’ofici, visió de sistemes i resolució de problemes de producte.",
+			"eyebrow": "En resum",
+			"title": "Desenvolupament frontend amb visió de producte i focus en un lliurament fiable",
 			"paragraphs": [
-				"Construeixo funcionalitats orientades a producte amb JavaScript, TypeScript, React, Node.js i SQL, i cada vegada treballo més amb TanStack Query i fluxos de formularis estructurats quan milloren la fiabilitat i l’experiència de desenvolupament.",
-				"A mesura que l’equip creixi, també espero assumir més responsabilitat en QA. La meva experiència pràctica avui se centra en proves d’API amb Postman i endpoints de Next.js documentats amb Swagger, validant comportaments, casos límit i l’alineació entre frontend i backend."
+				"Construeixo interfícies clares i mantenibles amb React i TypeScript, tenint presents les necessitats de les persones usuàries, la qualitat i el flux complet del producte"
 			],
 			"portraitAlt": "Retrat de Samuel Cobas"
 		},
@@ -67,12 +66,14 @@
 		"footer": {
 			"credit": "Dissenyat i desenvolupat per Samuel Cobas",
 			"copyrightSuffix": "SB",
+			"contactLabel": "Contacte",
+			"email": "samu.cobas.ort@gmail.com",
 			"externalProfileSuffix": "s’obre en una pestanya nova"
 		},
 		"notFound": {
 			"eyebrow": "404",
 			"title": "Pàgina no trobada",
-			"description": "La ruta que has demanat no existeix. Pots tornar a l’inici o anar a una altra secció del portfoli.",
+			"description": "La ruta que has demanat no existeix. Pots tornar a l’inici o anar a una altra secció del portfoli",
 			"goHomeLabel": "Tornar a l’inici"
 		},
 		"skipToContentLabel": "Anar directament al contingut principal",
@@ -80,27 +81,45 @@
 	},
 	"about": {
 		"eyebrow": "Sobre mi",
-		"title": "Què puc aportar més enllà de la landing.",
+		"title": "Què puc aportar més enllà de la interfície",
 		"paragraphs": [
-			"Vaig entrar al software després d’anys a l’hostaleria i hi vaig trobar el tipus de feina que vull continuar fent: resoldre problemes, millorar sistemes i construir interfícies clares, fiables i útils.",
-			"El meu focus principal és l’enginyeria frontend amb React i TypeScript, però també treballo còmodament a tot l’stack quan això ajuda a lliurar un millor producte. Això inclou UI amb estat, integració d’APIs, fluxos de dades amb TanStack Query i treball estructurat amb formularis.",
-			"A mesura que evolucionin el producte i l’equip, també espero assumir més responsabilitat en QA. La meva experiència pràctica avui se centra en proves d’API amb Postman i endpoints de Next.js documentats amb Swagger, posant el focus en el comportament, els casos límit i l’alineació entre frontend i backend."
+			"El desenvolupament frontend és el meu focus principal, amb React i TypeScript al centre. També treballo amb integracions d’APIs, Postman i coneixements bàsics de SQL i MongoDB quan una funcionalitat creua els límits del frontend",
+			"Amb experiència professional inicial, participo en desenvolupament, millora d’UX, testing, documentació i suport, mantenint presents el producte i les persones usuàries",
+			"Organitzo la feina, reviso dissenys i fluxos d’usuari, resolc dubtes, plantejo un enfocament, implemento la funcionalitat i provo el resultat amb Vitest i Playwright. També treballo amb Git mitjançant branques atòmiques i enfocades",
+			"Col·laboro amb disseny en millores d’UX, amb producte per definir el flux més clar i amb QA mitjançant proves directes a l’aplicació. Quan una funcionalitat no és clara, la reviso primer amb disseny, després amb el lideratge tècnic i finalment amb producte"
 		],
 		"skillsTitle": "Stack principal",
 		"toolsTitle": "Eines i flux de QA",
 		"skills": ["JavaScript", "TypeScript", "React", "Next.js", "TanStack Query", "TanStack Form", "Node.js", "SQL", "MongoDB", "Proves d’API"],
-		"tools": ["VS Code", "GitHub", "Postman", "Swagger / OpenAPI", "Figma", "MySQL Workbench", "Conceptes bàsics de Docker"],
+		"tools": [
+			"VS Code",
+			"GitHub",
+			"Vitest",
+			"Playwright",
+			"Postman",
+			"Swagger / OpenAPI",
+			"Figma",
+			"MySQL Workbench",
+			"Conceptes bàsics de Docker",
+			"Branques atòmiques amb Git"
+		],
 		"illustrationAlt": "Il·lustració per a la secció sobre mi"
 	},
 	"resume": {
 		"intro": {
 			"eyebrow": "CV",
-			"title": "Vista prèvia del CV i accés al document complet en un únic lloc.",
-			"description": "Fes servir la targeta amb la foto com a entrada visual ràpida i obre el PDF complet només quan realment vulguis consultar el document sencer."
+			"title": "Perfil de Desenvolupador Frontend i accés al CV en un únic lloc",
+			"description": "Desenvolupador Frontend centrat en React i TypeScript, amb experiència pràctica en millora d’UX, testing d’APIs i lliurament fiable de producte",
+			"highlights": [
+				"Desenvolupament frontend amb React i TypeScript",
+				"Pensament de producte orientat a UX",
+				"Testing amb Vitest i Playwright",
+				"Testing d’APIs amb Postman i coneixements bàsics de SQL i MongoDB"
+			]
 		},
 		"download": {
 			"title": "Obrir el CV de Samuel Cobas",
-			"description": "Fes clic a la foto per obrir el PDF actual en una pestanya nova i descarregar-lo només si realment necessites el fitxer.",
+			"description": "Fes clic a la foto per obrir el PDF actual en una pestanya nova i descarregar-lo només si realment necessites el fitxer",
 			"label": "Obrir PDF del CV",
 			"ariaLabel": "Obrir el CV de Samuel Cobas en PDF en una pestanya nova",
 			"previewAlt": "Retrat de Samuel Cobas utilitzat com a targeta de vista prèvia del CV",
@@ -110,8 +129,8 @@
 	"projects": {
 		"page": {
 			"eyebrow": "Projectes",
-			"title": "Treball seleccionat en frontend, XR i lliurament de producte.",
-			"description": "Aquests projectes reflecteixen el tipus de feina que més m’agrada: interfícies cuidades, pensament de sistemes clar i execució end-to-end pràctica."
+			"title": "Treball seleccionat en frontend, XR i lliurament de producte",
+			"description": "Aquests projectes reflecteixen el tipus de feina que més m’agrada: interfícies cuidades, pensament de sistemes clar i execució end-to-end pràctica"
 		},
 		"labels": {
 			"source": "Codi",
@@ -120,9 +139,9 @@
 			"liveDemoAriaSuffix": "demo en viu (s’obre en una pestanya nova)"
 		},
 		"descriptions": {
-			"pokefinder": "Una aplicació web en JavaScript que carrega dades de Pokemon des de la PokeAPI, permet una cerca ràpida i mostra perfils detallats amb estadístiques i imatges.",
-			"lsbuVrTour": "Una experiència de campus al navegador construïda amb A-Frame i WebXR, pensada perquè els usuaris explorin espais universitaris amb escenes immersives de 360 graus.",
-			"secureRent": "Una plataforma full-stack de lloguer que connecta propietaris i inquilins mitjançant autenticació, gestió d’anuncis, senyals de confiança i fluxos d’administració."
+			"pokefinder": "Una aplicació web en JavaScript que carrega dades de Pokemon des de la PokeAPI, permet una cerca ràpida i mostra perfils detallats amb estadístiques i imatges",
+			"lsbuVrTour": "Una experiència de campus al navegador construïda amb A-Frame i WebXR, pensada perquè els usuaris explorin espais universitaris amb escenes immersives de 360 graus",
+			"secureRent": "Una plataforma full-stack de lloguer que connecta propietaris i inquilins mitjançant autenticació, gestió d’anuncis, senyals de confiança i fluxos d’administració"
 		}
 	}
 }

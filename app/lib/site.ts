@@ -6,7 +6,7 @@ export type SocialLink = {
 	icon: LucideIcon
 }
 
-export const personName = 'Samuel Cobas'
+export const name = 'Samuel Cobas'
 export const portfolioRepoUrl = 'https://github.com/vlicus/Portfolio'
 
 export const socialLinks: SocialLink[] = [

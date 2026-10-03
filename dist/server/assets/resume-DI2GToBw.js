@@ -1,10 +1,10 @@
 import { jsx, jsxs } from "react/jsx-runtime";
-import { P as Page } from "./page-shell-ikbNTwR-.js";
-import { e as cn, u as useTranslations } from "./router-DivKTyu2.js";
+import { P as Page } from "./page-shell-B9f6p8u-.js";
+import { d as cn, u as useTranslations } from "./router-Cwi49Ojv.js";
 import { Root, Trigger, Portal, Content, Provider } from "@radix-ui/react-tooltip";
 import "@tanstack/react-router";
-import "react";
 import "lucide-react";
+import "react";
 import "class-variance-authority";
 import "@radix-ui/react-slot";
 import "clsx";
@@ -42,12 +42,14 @@ function TooltipContent(context) {
 function ResumePanel() {
   const { resume } = useTranslations();
   const { download: resumeDownload, intro: resumeIntro } = resume;
-  const { eyebrow, title } = resumeIntro;
+  const { eyebrow, title, description, highlights } = resumeIntro;
   const { ariaLabel, previewAlt, tooltip } = resumeDownload;
-  return /* @__PURE__ */ jsxs("section", { className: "grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] lg:items-center", children: [
-    /* @__PURE__ */ jsxs("div", { className: "space-y-5", children: [
+  return /* @__PURE__ */ jsxs("section", { className: "grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)] ", children: [
+    /* @__PURE__ */ jsxs("div", { className: "space-y-5 ", children: [
       /* @__PURE__ */ jsx("p", { className: "text-sm font-medium uppercase tracking-[0.3em] text-cyan-300", children: eyebrow }),
-      /* @__PURE__ */ jsx("h1", { className: "max-w-md text-4xl font-semibold tracking-tight text-white sm:text-5xl", children: title })
+      /* @__PURE__ */ jsx("h1", { className: "max-w-md text-4xl font-semibold tracking-tight text-white sm:text-5xl", children: title }),
+      /* @__PURE__ */ jsx("p", { className: "max-w-xl text-base leading-7 text-stone-300", children: description }),
+      /* @__PURE__ */ jsx("ul", { className: "grid gap-3 text-sm text-stone-200 sm:grid-cols-2 items-center", children: highlights.map((highlight) => /* @__PURE__ */ jsx("li", { className: "border-l border-cyan-300/50 pl-3", children: highlight }, highlight)) })
     ] }),
     /* @__PURE__ */ jsx("div", { children: /* @__PURE__ */ jsxs(Tooltip, { children: [
       /* @__PURE__ */ jsx(TooltipTrigger, { asChild: true, children: /* @__PURE__ */ jsxs(

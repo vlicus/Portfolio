@@ -3,6 +3,7 @@ import '../styles/global.css'
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 
 import { AppBackground } from '@/components/app-background'
+import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { I18nProvider, useI18n } from '@/lib/i18n'
 import { defaultLocale, validateRootSearch } from '@/lib/locale'
@@ -45,6 +46,9 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 					<AppBackground />
 					<SiteHeader />
 					{children}
+					<div className='mx-auto w-full max-w-6xl px-6 pb-14 sm:px-10 sm:pb-20'>
+						<SiteFooter />
+					</div>
 				</div>
 				<Scripts />
 			</body>
