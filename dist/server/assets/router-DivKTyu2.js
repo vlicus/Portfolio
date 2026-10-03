@@ -1,11 +1,267 @@
 import { useRouter, useRouterState, Link, createRootRoute, Outlet, HeadContent, Scripts, createFileRoute, lazyRouteComponent, createRouter } from "@tanstack/react-router";
-import { jsx, jsxs, Fragment } from "react/jsx-runtime";
+import { jsxs, jsx, Fragment } from "react/jsx-runtime";
 import { createContext, useContext, useState, useEffect } from "react";
-import { Code2, BriefcaseBusiness, Camera, Home, User, FolderKanban, FileText, Languages, X, Menu } from "lucide-react";
+import { ChevronDown, Check, ChevronUp, Code2, BriefcaseBusiness, Camera, FileText, FolderKanban, User, Home, X, Menu, Languages } from "lucide-react";
 import { cva } from "class-variance-authority";
 import { Slot } from "@radix-ui/react-slot";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { Root, Trigger, Icon, Value, Portal, Content, Viewport, Item, ItemText, ItemIndicator, ScrollUpButton, ScrollDownButton } from "@radix-ui/react-select";
+const HOME_HERO_TYPING = {
+  typingDelayMs: 70,
+  deletingDelayMs: 35,
+  roleHoldDelayMs: 1400,
+  roleSwitchDelayMs: 220
+};
+const HOME_HERO_TRAITS = ["React", "TypeScript", "Product Thinking"];
+const HOME_HERO_PARTICLES = [
+  { left: "8%", top: "18%", size: 8, delay: "0s", duration: "14s" },
+  { left: "18%", top: "68%", size: 5, delay: "1.2s", duration: "16s" },
+  { left: "28%", top: "36%", size: 4, delay: "0.8s", duration: "12s" },
+  { left: "42%", top: "14%", size: 6, delay: "2s", duration: "15s" },
+  { left: "58%", top: "74%", size: 7, delay: "1.5s", duration: "18s" },
+  { left: "64%", top: "28%", size: 4, delay: "2.4s", duration: "13s" },
+  { left: "76%", top: "16%", size: 6, delay: "0.6s", duration: "17s" },
+  { left: "84%", top: "52%", size: 5, delay: "1.8s", duration: "14s" },
+  { left: "90%", top: "24%", size: 8, delay: "2.8s", duration: "19s" }
+];
+const HOME_HERO_PARTICLE_STREAKS = [
+  {
+    className: "hero-particle-drift absolute left-[14%] top-[52%] hidden h-px w-28 bg-gradient-to-r from-cyan-300/0 via-cyan-300/18 to-cyan-300/0 sm:block",
+    delay: "0.4s",
+    duration: "18s"
+  },
+  {
+    className: "hero-particle-drift absolute right-[8%] top-[38%] hidden h-px w-24 bg-gradient-to-r from-sky-300/0 via-sky-300/16 to-sky-300/0 lg:block",
+    delay: "1.4s",
+    duration: "20s"
+  }
+];
+const SITE_HEADER_SCROLL_OFFSET_PX = 20;
+const SITE_NAV_ITEMS = [
+  { labelKey: "home", basePath: "/" },
+  { labelKey: "about", basePath: "/about" },
+  { labelKey: "projects", basePath: "/project" },
+  { labelKey: "resume", basePath: "/resume" }
+];
+const APP_BACKGROUND_GLOWS = [
+  {
+    key: "left-cyan",
+    left: "-8rem",
+    top: "6rem",
+    size: "24rem",
+    background: "rgba(34, 211, 238, 0.12)",
+    delay: "0s",
+    duration: "24s",
+    className: "hidden sm:block"
+  },
+  {
+    key: "right-sky",
+    left: "auto",
+    top: "22%",
+    size: "30rem",
+    background: "rgba(56, 189, 248, 0.1)",
+    delay: "1.8s",
+    duration: "28s",
+    className: "right-[-10rem]"
+  },
+  {
+    key: "bottom-white",
+    left: "28%",
+    top: "72%",
+    size: "18rem",
+    background: "rgba(255, 255, 255, 0.05)",
+    delay: "0.8s",
+    duration: "22s",
+    className: "hidden md:block"
+  }
+];
+const APP_BACKGROUND_STREAKS = [
+  {
+    key: "left-streak",
+    left: "12%",
+    top: "34%",
+    width: "10rem",
+    background: "linear-gradient(90deg, rgba(103,232,249,0), rgba(103,232,249,0.18), rgba(103,232,249,0))",
+    delay: "0.2s",
+    duration: "14s",
+    className: "hidden lg:block"
+  },
+  {
+    key: "right-streak",
+    left: "auto",
+    top: "62%",
+    width: "8rem",
+    background: "linear-gradient(90deg, rgba(125,211,252,0), rgba(125,211,252,0.16), rgba(125,211,252,0))",
+    delay: "1.5s",
+    duration: "16s",
+    className: "right-[10%] hidden md:block"
+  }
+];
+const APP_BACKGROUND_BEAMS = [
+  {
+    key: "cyan-beam",
+    left: "-6%",
+    top: "8%",
+    width: "24rem",
+    height: "32rem",
+    background: "linear-gradient(180deg, rgba(34,211,238,0.12), rgba(34,211,238,0))",
+    rotate: "-14deg",
+    delay: "0s",
+    duration: "26s",
+    className: "hidden md:block"
+  },
+  {
+    key: "sky-beam",
+    left: "auto",
+    top: "22%",
+    width: "20rem",
+    height: "28rem",
+    background: "linear-gradient(180deg, rgba(125,211,252,0.1), rgba(125,211,252,0))",
+    rotate: "18deg",
+    delay: "1.2s",
+    duration: "24s",
+    className: "right-[-4%] hidden lg:block"
+  }
+];
+const APP_BACKGROUND_NODES = [
+  {
+    key: "node-left",
+    left: "14%",
+    top: "24%",
+    size: "0.5rem",
+    delay: "0.4s",
+    duration: "12s",
+    className: "hidden md:block"
+  },
+  {
+    key: "node-center",
+    left: "48%",
+    top: "18%",
+    size: "0.375rem",
+    delay: "1.2s",
+    duration: "10s",
+    className: "hidden lg:block"
+  },
+  {
+    key: "node-right",
+    left: "78%",
+    top: "44%",
+    size: "0.5rem",
+    delay: "2s",
+    duration: "13s",
+    className: "hidden md:block"
+  },
+  {
+    key: "node-bottom",
+    left: "34%",
+    top: "72%",
+    size: "0.375rem",
+    delay: "0.8s",
+    duration: "11s",
+    className: "hidden lg:block"
+  }
+];
+function AppBackground() {
+  return /* @__PURE__ */ jsxs("div", { "aria-hidden": true, className: "pointer-events-none fixed inset-0 -z-10 overflow-hidden", children: [
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,18,0.92),rgba(3,6,15,0.98))]" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.14),transparent_30%),radial-gradient(circle_at_20%_18%,rgba(34,211,238,0.1),transparent_22%),radial-gradient(circle_at_80%_28%,rgba(56,189,248,0.08),transparent_26%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.05),transparent_30%)]" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute left-1/2 top-[-18rem] h-[34rem] w-[58rem] -translate-x-1/2 rounded-full bg-[conic-gradient(from_180deg_at_50%_50%,rgba(34,211,238,0),rgba(34,211,238,0.07),rgba(125,211,252,0.02),rgba(34,211,238,0))] opacity-80 blur-3xl" }),
+    /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: "absolute inset-0 opacity-[0.22]",
+        style: {
+          backgroundImage: "repeating-linear-gradient(90deg, rgba(148,163,184,0.06) 0, rgba(148,163,184,0.06) 1px, transparent 1px, transparent 104px), repeating-linear-gradient(0deg, rgba(148,163,184,0.04) 0, rgba(148,163,184,0.04) 1px, transparent 1px, transparent 104px)",
+          maskImage: "radial-gradient(circle at center, black, transparent 88%)"
+        }
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: "absolute inset-0 opacity-[0.14]",
+        style: {
+          backgroundImage: "repeating-linear-gradient(90deg, rgba(103,232,249,0.08) 0, rgba(103,232,249,0.08) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(0deg, rgba(103,232,249,0.06) 0, rgba(103,232,249,0.06) 1px, transparent 1px, transparent 26px)",
+          maskImage: "radial-gradient(circle at center, transparent 22%, black 48%, transparent 82%)"
+        }
+      }
+    ),
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.03),transparent_20%,transparent_75%,rgba(255,255,255,0.025))]" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_46%,rgba(2,6,23,0.28)_100%)]" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute left-6 top-24 hidden h-24 w-24 rounded-tl-[2rem] border-l border-t border-cyan-300/12 md:block" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute bottom-16 right-8 hidden h-20 w-20 rounded-br-[2rem] border-b border-r border-sky-300/12 lg:block" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute left-[14%] top-[24%] hidden h-px w-24 bg-gradient-to-r from-cyan-300/0 via-cyan-300/12 to-cyan-300/0 md:block" }),
+    /* @__PURE__ */ jsx("div", { className: "absolute right-[16%] top-[44%] hidden h-px w-20 bg-gradient-to-r from-sky-300/0 via-sky-300/12 to-sky-300/0 lg:block" }),
+    APP_BACKGROUND_BEAMS.map((beam) => /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: `app-ambient-float absolute blur-3xl ${beam.className}`,
+        style: {
+          left: beam.left,
+          top: beam.top,
+          width: beam.width,
+          height: beam.height,
+          background: beam.background,
+          transform: `rotate(${beam.rotate})`,
+          animationDelay: beam.delay,
+          animationDuration: beam.duration
+        }
+      },
+      beam.key
+    )),
+    APP_BACKGROUND_NODES.map((node) => /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: `app-ambient-pulse absolute rounded-full ${node.className}`,
+        style: {
+          left: node.left,
+          top: node.top,
+          width: node.size,
+          height: node.size,
+          animationDelay: node.delay,
+          animationDuration: node.duration
+        },
+        children: [
+          /* @__PURE__ */ jsx("span", { className: "absolute inset-0 rounded-full bg-cyan-200/75 shadow-[0_0_14px_rgba(103,232,249,0.45)]" }),
+          /* @__PURE__ */ jsx("span", { className: "absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-200/12" })
+        ]
+      },
+      node.key
+    )),
+    APP_BACKGROUND_GLOWS.map((glow) => /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: `app-ambient-float absolute rounded-full blur-3xl ${glow.className}`,
+        style: {
+          left: glow.left,
+          top: glow.top,
+          width: glow.size,
+          height: glow.size,
+          background: glow.background,
+          animationDelay: glow.delay,
+          animationDuration: glow.duration
+        }
+      },
+      glow.key
+    )),
+    APP_BACKGROUND_STREAKS.map((streak) => /* @__PURE__ */ jsx(
+      "div",
+      {
+        className: `app-ambient-pulse absolute h-px ${streak.className}`,
+        style: {
+          left: streak.left,
+          top: streak.top,
+          width: streak.width,
+          background: streak.background,
+          animationDelay: streak.delay,
+          animationDuration: streak.duration
+        }
+      },
+      streak.key
+    ))
+  ] });
+}
 function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
@@ -43,7 +299,94 @@ function Button(context) {
   const Comp = asChild ? Slot : "button";
   return /* @__PURE__ */ jsx(Comp, { "data-slot": "button", "data-variant": variant, "data-size": size, className: cn(buttonVariants({ variant, size, className })), ...props });
 }
-const logoImage = "/assets/logo-Dd6gEkJl.png";
+function Select(context) {
+  return /* @__PURE__ */ jsx(Root, { "data-slot": "select", ...context });
+}
+function SelectValue(context) {
+  return /* @__PURE__ */ jsx(Value, { "data-slot": "select-value", ...context });
+}
+function SelectTrigger(context) {
+  const { className, children, ...props } = context;
+  return /* @__PURE__ */ jsxs(
+    Trigger,
+    {
+      "data-slot": "select-trigger",
+      className: cn(
+        "flex h-10 w-fit items-center justify-between gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm font-medium text-stone-100 outline-none transition placeholder:text-stone-400 hover:bg-white/10 focus-visible:border-cyan-300/40 focus-visible:ring-2 focus-visible:ring-cyan-300/20 disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-cyan-300/30 data-[state=open]:bg-white/10 [&>span]:line-clamp-1",
+        className
+      ),
+      ...props,
+      children: [
+        children,
+        /* @__PURE__ */ jsx(Icon, { asChild: true, children: /* @__PURE__ */ jsx(ChevronDown, { className: "size-4 text-stone-400" }) })
+      ]
+    }
+  );
+}
+function SelectContent(context) {
+  const { className, children, position = "popper", sideOffset = 8, ...props } = context;
+  return /* @__PURE__ */ jsx(Portal, { children: /* @__PURE__ */ jsxs(
+    Content,
+    {
+      "data-slot": "select-content",
+      className: cn(
+        "relative z-50 min-w-[8rem] overflow-hidden rounded-2xl border border-cyan-300/15 bg-slate-950/98 text-stone-100 shadow-2xl shadow-slate-950/60 backdrop-blur-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+        className
+      ),
+      position,
+      sideOffset,
+      ...props,
+      children: [
+        /* @__PURE__ */ jsx(SelectScrollUpButton, {}),
+        /* @__PURE__ */ jsx(Viewport, { className: cn("p-1", position === "popper" && "h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)] w-full"), children }),
+        /* @__PURE__ */ jsx(SelectScrollDownButton, {})
+      ]
+    }
+  ) });
+}
+function SelectItem(context) {
+  const { className, children, ...props } = context;
+  return /* @__PURE__ */ jsxs(
+    Item,
+    {
+      "data-slot": "select-item",
+      className: cn(
+        "relative flex w-full cursor-default select-none items-center gap-2 rounded-xl py-2.5 pl-3 pr-9 text-sm text-stone-100 outline-none transition focus:bg-cyan-300/10 focus:text-cyan-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        className
+      ),
+      ...props,
+      children: [
+        /* @__PURE__ */ jsx(ItemText, { children }),
+        /* @__PURE__ */ jsx("span", { className: "absolute right-3 flex size-4 items-center justify-center", children: /* @__PURE__ */ jsx(ItemIndicator, { children: /* @__PURE__ */ jsx(Check, { className: "size-4 text-cyan-300" }) }) })
+      ]
+    }
+  );
+}
+function SelectScrollUpButton(context) {
+  const { className, ...props } = context;
+  return /* @__PURE__ */ jsx(
+    ScrollUpButton,
+    {
+      "data-slot": "select-scroll-up-button",
+      className: cn("flex cursor-default items-center justify-center py-1 text-stone-400", className),
+      ...props,
+      children: /* @__PURE__ */ jsx(ChevronUp, { className: "size-4" })
+    }
+  );
+}
+function SelectScrollDownButton(context) {
+  const { className, ...props } = context;
+  return /* @__PURE__ */ jsx(
+    ScrollDownButton,
+    {
+      "data-slot": "select-scroll-down-button",
+      className: cn("flex cursor-default items-center justify-center py-1 text-stone-400", className),
+      ...props,
+      children: /* @__PURE__ */ jsx(ChevronDown, { className: "size-4" })
+    }
+  );
+}
 const defaultLocale = "en";
 const locales = ["en", "ca", "es"];
 const localeOptions = [
@@ -69,7 +412,7 @@ function getLocaleFromSearch(search) {
 }
 function localizePath(pathname, locale, search) {
   const normalizedPath = pathname || "/";
-  const searchParams = typeof search === "string" ? new URLSearchParams(search) : new URLSearchParams(search);
+  const searchParams = new URLSearchParams(search);
   searchParams.set("lang", locale);
   const query = searchParams.toString();
   return query ? `${normalizedPath}?${query}` : normalizedPath;
@@ -82,11 +425,13 @@ function I18nProvider({ children }) {
   });
   const locale = getLocaleFromSearch(searchStr);
   function setLocale(nextLocale) {
-    const { pathname, searchStr: currentSearch } = router2.state.location;
-    const params = new URLSearchParams(currentSearch);
-    params.set("lang", nextLocale);
+    const { pathname } = router2.state.location;
     void router2.navigate({
-      href: `${pathname}?${params.toString()}`,
+      to: pathname,
+      search: (previous) => ({
+        ...previous,
+        lang: nextLocale
+      }),
       replace: true
     });
   }
@@ -155,6 +500,12 @@ const socialLinks = [
   { label: "Instagram", href: "https://www.instagram.com/vlicus93/", icon: Camera }
 ];
 const footerLinks = socialLinks.filter((link) => link.label !== "Instagram");
+const navIcons = {
+  home: Home,
+  about: User,
+  projects: FolderKanban,
+  resume: FileText
+};
 function SiteHeader() {
   const { locale, localeOptions: localeOptions2, setLocale } = useI18n();
   const messages = useTranslations();
@@ -166,12 +517,25 @@ function SiteHeader() {
   const basePath = pathname;
   const localizedSearch = { lang: locale };
   const { header, navigationLabels, siteLabel } = messages.site;
-  const { closeMenuLabel, languageLabel, logoAlt, mobileNavLabel, openMenuLabel, primaryNavLabel, sourceLabel } = header;
+  const navigationItems = SITE_NAV_ITEMS.map((item) => ({
+    ...item,
+    label: navigationLabels[item.labelKey],
+    icon: navIcons[item.labelKey]
+  }));
+  const {
+    closeMenuLabel,
+    languageLabel,
+    /* logoAlt, */
+    mobileNavLabel,
+    openMenuLabel,
+    primaryNavLabel,
+    sourceLabel
+  } = header;
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY >= 20);
+      setIsScrolled(window.scrollY >= SITE_HEADER_SCROLL_OFFSET_PX);
     };
     handleScroll();
     window.addEventListener("scroll", handleScroll);
@@ -180,62 +544,73 @@ function SiteHeader() {
   function handleLocaleChange(value) {
     setLocale(normalizeLocale(value));
   }
-  return /* @__PURE__ */ jsx("header", { className: "sticky top-0 z-50 px-4 pt-4 sm:px-6", children: /* @__PURE__ */ jsxs(
+  function renderLocaleSelect(mode) {
+    const isMobile = mode === "mobile";
+    const triggerLabel = localeOptions2.find((option) => option.value === locale)?.shortLabel ?? locale.toUpperCase();
+    return /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: cn(
+          "relative inline-flex items-center gap-2 overflow-hidden border border-cyan-300/12 bg-slate-950/90 text-stone-100 shadow-lg shadow-slate-950/30 ring-1 ring-white/5 transition duration-200 hover:border-cyan-300/20 hover:bg-slate-950",
+          isMobile ? "w-full rounded-2xl px-4 py-3" : "rounded-full px-3 py-2"
+        ),
+        children: [
+          /* @__PURE__ */ jsx("div", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent)]" }),
+          /* @__PURE__ */ jsx(Languages, { className: "size-4 shrink-0 text-stone-300" }),
+          isMobile ? /* @__PURE__ */ jsx("span", { className: "text-sm font-medium text-stone-100", children: languageLabel }) : /* @__PURE__ */ jsx("span", { className: "sr-only", children: languageLabel }),
+          /* @__PURE__ */ jsxs(Select, { onValueChange: handleLocaleChange, value: locale, children: [
+            /* @__PURE__ */ jsx(
+              SelectTrigger,
+              {
+                "aria-label": languageLabel,
+                className: cn(
+                  "relative border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 data-[state=open]:bg-transparent",
+                  isMobile ? "ml-auto h-auto min-w-[4.5rem] justify-end gap-2 text-sm font-semibold" : "h-auto min-w-[2.75rem] justify-end gap-1 text-xs font-semibold uppercase tracking-[0.2em]"
+                ),
+                children: /* @__PURE__ */ jsx(SelectValue, { children: triggerLabel })
+              }
+            ),
+            /* @__PURE__ */ jsx(SelectContent, { align: isMobile ? "end" : "center", side: "bottom", children: localeOptions2.map(({ value, shortLabel, label }) => /* @__PURE__ */ jsx(SelectItem, { value, children: isMobile ? label : shortLabel }, value)) })
+          ] })
+        ]
+      }
+    );
+  }
+  return /* @__PURE__ */ jsx("header", { className: "sticky top-0 z-50 px-3 pt-3 sm:px-6 sm:pt-4", children: /* @__PURE__ */ jsxs(
     "div",
     {
       className: cn(
-        "mx-auto flex w-full max-w-6xl flex-col rounded-[1.5rem] border border-white/10 bg-stone-950/75 px-4 py-3 shadow-lg shadow-black/20 backdrop-blur transition sm:px-6",
+        "relative mx-auto flex w-full max-w-6xl flex-col rounded-[1.5rem] border border-white/10 bg-stone-950/75 px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur transition sm:px-6 sm:py-3",
         isScrolled && "border-cyan-300/15 bg-stone-950/90 shadow-2xl shadow-cyan-950/10"
       ),
       children: [
         /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-4", children: [
-          /* @__PURE__ */ jsxs(Link, { className: "flex items-center gap-3", search: localizedSearch, to: "/", children: [
-            /* @__PURE__ */ jsx("img", { alt: logoAlt, className: "h-10 w-10 rounded-full border border-white/10 bg-white/5 object-contain p-1", src: logoImage }),
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("p", { className: "text-sm font-semibold tracking-wide text-white", children: personName }),
-              /* @__PURE__ */ jsx("p", { className: "text-xs uppercase tracking-[0.25em] text-stone-400", children: siteLabel })
-            ] })
-          ] }),
+          /* @__PURE__ */ jsx(Link, { className: "flex min-w-0 items-center gap-2 sm:gap-3", onClick: () => setIsOpen(false), search: localizedSearch, to: "/", children: /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
+            /* @__PURE__ */ jsx("p", { className: "truncate text-sm font-semibold tracking-wide text-white", children: personName }),
+            /* @__PURE__ */ jsx("p", { className: "hidden text-xs uppercase tracking-[0.25em] text-stone-400 sm:block", children: siteLabel })
+          ] }) }),
           /* @__PURE__ */ jsxs("nav", { "aria-label": primaryNavLabel, className: "hidden items-center gap-2 md:flex", children: [
-            [
-              { basePath: "/", label: navigationLabels.home, icon: Home },
-              { basePath: "/about", label: navigationLabels.about, icon: User },
-              { basePath: "/project", label: navigationLabels.projects, icon: FolderKanban },
-              { basePath: "/resume", label: navigationLabels.resume, icon: FileText }
-            ].map(({ basePath: itemBasePath, label, icon: Icon }) => {
+            navigationItems.map(({ basePath: itemBasePath, label, icon: Icon2 }) => {
               const isActive = basePath === itemBasePath;
               return /* @__PURE__ */ jsxs(
                 Link,
                 {
                   "aria-current": isActive ? "page" : void 0,
                   className: cn(
-                    "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition",
-                    isActive ? "bg-cyan-300 text-slate-950" : "text-stone-200 hover:bg-white/10 hover:text-white"
+                    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition duration-200",
+                    isActive ? "border-cyan-300/70 bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-950/20" : "border-transparent text-stone-200 hover:-translate-y-0.5 hover:border-cyan-300/20 hover:bg-cyan-300/10 hover:text-white"
                   ),
                   search: localizedSearch,
                   to: itemBasePath,
                   children: [
-                    /* @__PURE__ */ jsx(Icon, { className: "size-4" }),
+                    /* @__PURE__ */ jsx(Icon2, { className: "size-4" }),
                     label
                   ]
                 },
                 itemBasePath
               );
             }),
-            /* @__PURE__ */ jsxs("label", { className: "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-stone-100 transition hover:bg-white/10", children: [
-              /* @__PURE__ */ jsx(Languages, { className: "size-4 text-stone-300" }),
-              /* @__PURE__ */ jsx("span", { className: "sr-only", children: languageLabel }),
-              /* @__PURE__ */ jsx(
-                "select",
-                {
-                  "aria-label": languageLabel,
-                  className: "min-w-[3.75rem] appearance-none bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-stone-100 outline-none",
-                  onChange: (event) => handleLocaleChange(event.target.value),
-                  value: locale,
-                  children: localeOptions2.map(({ value, shortLabel }) => /* @__PURE__ */ jsx("option", { className: "bg-stone-950 text-stone-100", value, children: shortLabel }, value))
-                }
-              )
-            ] }),
+            renderLocaleSelect("desktop"),
             /* @__PURE__ */ jsx(Button, { asChild: true, size: "sm", variant: "outline", className: "border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white", children: /* @__PURE__ */ jsxs("a", { href: portfolioRepoUrl, rel: "noopener noreferrer", target: "_blank", children: [
               /* @__PURE__ */ jsx(Code2, { className: "size-4" }),
               sourceLabel
@@ -254,57 +629,53 @@ function SiteHeader() {
             }
           )
         ] }),
-        isOpen ? /* @__PURE__ */ jsxs("nav", { "aria-label": mobileNavLabel, id: "mobile-navigation", className: "mt-4 grid gap-2 border-t border-white/10 pt-4 md:hidden", children: [
-          /* @__PURE__ */ jsxs("label", { className: "inline-flex items-center gap-2 rounded-2xl bg-white/5 px-4 py-3 text-stone-100 transition hover:bg-white/10", children: [
-            /* @__PURE__ */ jsx(Languages, { className: "size-4 text-stone-300" }),
-            /* @__PURE__ */ jsx("span", { className: "text-sm font-medium text-stone-100", children: languageLabel }),
-            /* @__PURE__ */ jsx(
-              "select",
-              {
-                "aria-label": languageLabel,
-                className: "ml-auto min-w-[4.25rem] appearance-none bg-transparent text-xs font-semibold uppercase tracking-[0.2em] text-stone-100 outline-none",
-                onChange: (event) => handleLocaleChange(event.target.value),
-                value: locale,
-                children: localeOptions2.map(({ value, shortLabel }) => /* @__PURE__ */ jsx("option", { className: "bg-stone-950 text-stone-100", value, children: shortLabel }, value))
-              }
-            )
-          ] }),
-          [
-            { basePath: "/", label: navigationLabels.home, icon: Home },
-            { basePath: "/about", label: navigationLabels.about, icon: User },
-            { basePath: "/project", label: navigationLabels.projects, icon: FolderKanban },
-            { basePath: "/resume", label: navigationLabels.resume, icon: FileText }
-          ].map(({ basePath: itemBasePath, label, icon: Icon }) => {
-            const isActive = basePath === itemBasePath;
-            return /* @__PURE__ */ jsxs(
-              Link,
-              {
-                "aria-current": isActive ? "page" : void 0,
-                className: cn(
-                  "inline-flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition",
-                  isActive ? "bg-cyan-300 text-slate-950" : "bg-white/5 text-stone-100 hover:bg-white/10"
-                ),
-                onClick: () => setIsOpen(false),
-                search: localizedSearch,
-                to: itemBasePath,
-                children: [
-                  /* @__PURE__ */ jsx(Icon, { className: "size-4" }),
-                  label
-                ]
-              },
-              itemBasePath
-            );
-          }),
+        isOpen ? /* @__PURE__ */ jsxs(Fragment, { children: [
+          /* @__PURE__ */ jsx("button", { "aria-hidden": true, className: "fixed inset-0 z-[-1] bg-slate-950/20 md:hidden", onClick: () => setIsOpen(false), tabIndex: -1, type: "button" }),
           /* @__PURE__ */ jsxs(
-            "a",
+            "nav",
             {
-              className: "inline-flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3 text-sm font-medium text-stone-100 transition hover:bg-white/10",
-              href: portfolioRepoUrl,
-              rel: "noopener noreferrer",
-              target: "_blank",
+              "aria-label": mobileNavLabel,
+              id: "mobile-navigation",
+              className: "absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 grid gap-2 overflow-hidden rounded-[1.5rem] border border-cyan-300/12 bg-slate-950 p-3 shadow-2xl shadow-slate-950/60 ring-1 ring-white/5 md:hidden",
               children: [
-                /* @__PURE__ */ jsx(Code2, { className: "size-4" }),
-                sourceLabel
+                /* @__PURE__ */ jsx("div", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),transparent)]" }),
+                /* @__PURE__ */ jsx("div", { "aria-hidden": true, className: "absolute right-0 top-0 h-24 w-24 rounded-full bg-cyan-300/10 blur-3xl" }),
+                renderLocaleSelect("mobile"),
+                navigationItems.map(({ basePath: itemBasePath, label, icon: Icon2 }) => {
+                  const isActive = basePath === itemBasePath;
+                  return /* @__PURE__ */ jsxs(
+                    Link,
+                    {
+                      "aria-current": isActive ? "page" : void 0,
+                      className: cn(
+                        "relative inline-flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition duration-200",
+                        isActive ? "border-cyan-300/70 bg-cyan-300 text-slate-950 shadow-lg shadow-cyan-950/20" : "border-white/10 bg-white/[0.03] text-stone-100 hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/10 hover:text-cyan-50"
+                      ),
+                      onClick: () => setIsOpen(false),
+                      search: localizedSearch,
+                      to: itemBasePath,
+                      children: [
+                        /* @__PURE__ */ jsx(Icon2, { className: "size-4" }),
+                        label
+                      ]
+                    },
+                    itemBasePath
+                  );
+                }),
+                /* @__PURE__ */ jsxs(
+                  "a",
+                  {
+                    className: "inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-stone-100 transition duration-200 hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/10 hover:text-cyan-50",
+                    href: portfolioRepoUrl,
+                    onClick: () => setIsOpen(false),
+                    rel: "noopener noreferrer",
+                    target: "_blank",
+                    children: [
+                      /* @__PURE__ */ jsx(Code2, { className: "size-4" }),
+                      sourceLabel
+                    ]
+                  }
+                )
               ]
             }
           )
@@ -323,32 +694,52 @@ function getRootMetadata(locale) {
 function getPageMetadata(locale) {
   return getMessages(locale).metadata.pages;
 }
-function getPageMetadataByPath(locale, path) {
-  const metadata2 = getPageMetadata(locale);
-  const basePath = path;
-  if (basePath === "/about") {
-    return metadata2.about;
-  }
-  if (basePath === "/project") {
-    return metadata2.projects;
-  }
-  if (basePath === "/resume") {
-    return metadata2.resume;
-  }
-  return metadata2.home;
-}
-getRootMetadata(defaultLocale);
-getPageMetadata(defaultLocale);
-const Route$4 = createRootRoute({
-  validateSearch: validateRootSearch,
-  head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { name: "theme-color", content: "#140f23" }],
+function createRootHead(locale) {
+  const rootMeta = getRootMetadata(locale);
+  return {
+    meta: [
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "theme-color", content: "#140f23" },
+      { title: rootMeta.siteTitle },
+      { name: "keywords", content: rootMeta.siteKeywords },
+      { name: "author", content: rootMeta.siteAuthor },
+      { property: "og:type", content: "website" },
+      { property: "og:site_name", content: rootMeta.siteTitle },
+      { property: "og:image", content: rootMeta.ogImageUrl },
+      { property: "og:image:alt", content: rootMeta.ogImageAlt },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: rootMeta.ogImageUrl }
+    ],
     links: [
       { rel: "icon", href: "/favicon.png", type: "image/png" },
+      { rel: "alternate icon", href: "/favicon.svg", type: "image/svg+xml" },
       { rel: "apple-touch-icon", href: "/favicon.png" },
       { rel: "manifest", href: "/manifest.json" }
     ]
-  }),
+  };
+}
+function createPageHead(locale, path, pageKey) {
+  const rootMeta = getRootMetadata(locale);
+  const pageMeta = getPageMetadata(locale)[pageKey];
+  const pageTitle = pageMeta.title === rootMeta.siteTitle ? pageMeta.title : `${pageMeta.title} | ${rootMeta.siteTitle}`;
+  const pageUrl = new URL(localizePath(path, locale, ""), rootMeta.siteUrl).toString();
+  return {
+    meta: [
+      { title: pageTitle },
+      { name: "description", content: pageMeta.description },
+      { property: "og:title", content: pageTitle },
+      { property: "og:description", content: pageMeta.description },
+      { property: "og:url", content: pageUrl },
+      { name: "twitter:title", content: pageTitle },
+      { name: "twitter:description", content: pageMeta.description }
+    ],
+    links: [{ rel: "canonical", href: pageUrl }]
+  };
+}
+const Route$4 = createRootRoute({
+  validateSearch: validateRootSearch,
+  head: () => createRootHead(defaultLocale),
   notFoundComponent: NotFoundPage,
   component: RootComponent
 });
@@ -359,11 +750,8 @@ function RootDocument({ children }) {
   const { locale } = useI18n();
   const messages = useTranslations();
   return /* @__PURE__ */ jsxs("html", { lang: locale, className: "dark", children: [
-    /* @__PURE__ */ jsxs("head", { children: [
-      /* @__PURE__ */ jsx(HeadContent, {}),
-      /* @__PURE__ */ jsx(LocalizedHead, {})
-    ] }),
-    /* @__PURE__ */ jsxs("body", { className: "min-h-screen bg-stone-950 text-stone-100 antialiased", children: [
+    /* @__PURE__ */ jsx("head", { children: /* @__PURE__ */ jsx(HeadContent, {}) }),
+    /* @__PURE__ */ jsxs("body", { className: "min-h-screen bg-transparent text-stone-100 antialiased", children: [
       /* @__PURE__ */ jsx(
         "a",
         {
@@ -372,43 +760,13 @@ function RootDocument({ children }) {
           children: messages.site.skipToContentLabel
         }
       ),
-      /* @__PURE__ */ jsxs("div", { className: "relative min-h-screen", children: [
+      /* @__PURE__ */ jsxs("div", { className: "relative isolate min-h-screen overflow-x-hidden", children: [
+        /* @__PURE__ */ jsx(AppBackground, {}),
         /* @__PURE__ */ jsx(SiteHeader, {}),
         children
       ] }),
       /* @__PURE__ */ jsx(Scripts, {})
     ] })
-  ] });
-}
-function LocalizedHead() {
-  const { locale } = useI18n();
-  const { pathname, search } = useRouterState({
-    select: (state) => ({
-      pathname: state.location.pathname,
-      search: state.location.searchStr
-    })
-  });
-  const rootMetadata = getRootMetadata(locale);
-  const pageMetadata = getPageMetadataByPath(locale, pathname);
-  const pageTitle = pageMetadata.title === rootMetadata.siteTitle ? pageMetadata.title : `${pageMetadata.title} | ${rootMetadata.siteTitle}`;
-  const pageUrl = new URL(localizePath(pathname, locale, search), rootMetadata.siteUrl).toString();
-  return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsx("title", { children: pageTitle }),
-    /* @__PURE__ */ jsx("meta", { content: pageMetadata.description, name: "description" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.siteKeywords, name: "keywords" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.siteAuthor, name: "author" }),
-    /* @__PURE__ */ jsx("meta", { content: "website", property: "og:type" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.siteTitle, property: "og:site_name" }),
-    /* @__PURE__ */ jsx("meta", { content: pageTitle, property: "og:title" }),
-    /* @__PURE__ */ jsx("meta", { content: pageMetadata.description, property: "og:description" }),
-    /* @__PURE__ */ jsx("meta", { content: pageUrl, property: "og:url" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.ogImageUrl, property: "og:image" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.ogImageAlt, property: "og:image:alt" }),
-    /* @__PURE__ */ jsx("meta", { content: "summary_large_image", name: "twitter:card" }),
-    /* @__PURE__ */ jsx("meta", { content: pageTitle, name: "twitter:title" }),
-    /* @__PURE__ */ jsx("meta", { content: pageMetadata.description, name: "twitter:description" }),
-    /* @__PURE__ */ jsx("meta", { content: rootMetadata.ogImageUrl, name: "twitter:image" }),
-    /* @__PURE__ */ jsx("link", { href: pageUrl, rel: "canonical" })
   ] });
 }
 function NotFoundPage() {
@@ -417,18 +775,21 @@ function NotFoundPage() {
 function NotFoundPageContent() {
   const { locale } = useI18n();
   const messages = useTranslations();
-  const { navigationLabels, notFound } = messages.site;
+  const { site: site2 } = messages;
+  const { navigationLabels, notFound } = site2;
   const localizedSearch = { lang: locale };
+  const { eyebrow, title, description, goHomeLabel } = notFound;
+  const { about: about2, projects: projects2 } = navigationLabels;
   return /* @__PURE__ */ jsx(RootDocument, { children: /* @__PURE__ */ jsxs("main", { id: "main-content", className: "mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-3xl flex-col items-start justify-center gap-6 px-6 py-16", children: [
-    /* @__PURE__ */ jsx("p", { className: "text-sm font-medium uppercase tracking-[0.3em] text-cyan-300", children: notFound.eyebrow }),
+    /* @__PURE__ */ jsx("p", { className: "text-sm font-medium uppercase tracking-[0.3em] text-cyan-300", children: eyebrow }),
     /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
-      /* @__PURE__ */ jsx("h1", { className: "text-4xl font-semibold tracking-tight text-white", children: notFound.title }),
-      /* @__PURE__ */ jsx("p", { className: "max-w-xl text-base leading-7 text-stone-300", children: notFound.description })
+      /* @__PURE__ */ jsx("h1", { className: "text-4xl font-semibold tracking-tight text-white", children: title }),
+      /* @__PURE__ */ jsx("p", { className: "max-w-xl text-base leading-7 text-stone-300", children: description })
     ] }),
     /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-3", children: [
-      { to: "/", label: notFound.goHomeLabel },
-      { to: "/about", label: navigationLabels.about },
-      { to: "/project", label: navigationLabels.projects }
+      { to: "/", label: goHomeLabel },
+      { to: "/about", label: about2 },
+      { to: "/project", label: projects2 }
     ].map((link) => /* @__PURE__ */ jsx(
       Link,
       {
@@ -441,40 +802,88 @@ function NotFoundPageContent() {
     )) })
   ] }) });
 }
-const $$splitComponentImporter$3 = () => import("./resume-B4JY5Vg_.js");
-const Route$3 = createFileRoute("/resume")({
+const $$splitComponentImporter$3 = () => import("./index-BA_iC-1L.js");
+const Route$3 = createFileRoute("/")({
+  validateSearch: validateRootSearch,
+  loaderDeps: ({
+    search
+  }) => ({
+    lang: search.lang
+  }),
+  loader: ({
+    deps
+  }) => deps.lang ?? defaultLocale,
+  head: ({
+    loaderData
+  }) => createPageHead(loaderData ?? defaultLocale, "/", "home"),
   component: lazyRouteComponent($$splitComponentImporter$3, "component")
 });
-const $$splitComponentImporter$2 = () => import("./project-QEkG-53x.js");
-const Route$2 = createFileRoute("/project")({
+const $$splitComponentImporter$2 = () => import("./about-DZUwdrQN.js");
+const Route$2 = createFileRoute("/about")({
+  validateSearch: validateRootSearch,
+  loaderDeps: ({
+    search
+  }) => ({
+    lang: search.lang
+  }),
+  loader: ({
+    deps
+  }) => deps.lang ?? defaultLocale,
+  head: ({
+    loaderData
+  }) => createPageHead(loaderData ?? defaultLocale, "/about", "about"),
   component: lazyRouteComponent($$splitComponentImporter$2, "component")
 });
-const $$splitComponentImporter$1 = () => import("./about-BmjBXJK1.js");
-const Route$1 = createFileRoute("/about")({
+const $$splitComponentImporter$1 = () => import("./project-CNubLfKH.js");
+const Route$1 = createFileRoute("/project")({
+  validateSearch: validateRootSearch,
+  loaderDeps: ({
+    search
+  }) => ({
+    lang: search.lang
+  }),
+  loader: ({
+    deps
+  }) => deps.lang ?? defaultLocale,
+  head: ({
+    loaderData
+  }) => createPageHead(loaderData ?? defaultLocale, "/project", "projects"),
   component: lazyRouteComponent($$splitComponentImporter$1, "component")
 });
-const $$splitComponentImporter = () => import("./index-BiktbL1F.js");
-const Route = createFileRoute("/")({
+const $$splitComponentImporter = () => import("./resume-B4nD04rZ.js");
+const Route = createFileRoute("/resume")({
+  validateSearch: validateRootSearch,
+  loaderDeps: ({
+    search
+  }) => ({
+    lang: search.lang
+  }),
+  loader: ({
+    deps
+  }) => deps.lang ?? defaultLocale,
+  head: ({
+    loaderData
+  }) => createPageHead(loaderData ?? defaultLocale, "/resume", "resume"),
   component: lazyRouteComponent($$splitComponentImporter, "component")
 });
-const ResumeRoute = Route$3.update({
-  id: "/resume",
-  path: "/resume",
+const IndexRoute = Route$3.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => Route$4
 });
-const ProjectRoute = Route$2.update({
-  id: "/project",
-  path: "/project",
-  getParentRoute: () => Route$4
-});
-const AboutRoute = Route$1.update({
+const AboutRoute = Route$2.update({
   id: "/about",
   path: "/about",
   getParentRoute: () => Route$4
 });
-const IndexRoute = Route.update({
-  id: "/",
-  path: "/",
+const ProjectRoute = Route$1.update({
+  id: "/project",
+  path: "/project",
+  getParentRoute: () => Route$4
+});
+const ResumeRoute = Route.update({
+  id: "/resume",
+  path: "/resume",
   getParentRoute: () => Route$4
 });
 const rootRouteChildren = {
@@ -496,9 +905,14 @@ const router = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
 }, Symbol.toStringTag, { value: "Module" }));
 export {
   Button as B,
-  cn as c,
+  HOME_HERO_PARTICLES as H,
+  HOME_HERO_PARTICLE_STREAKS as a,
+  HOME_HERO_TRAITS as b,
+  HOME_HERO_TYPING as c,
+  personName as d,
+  cn as e,
   footerLinks as f,
-  personName as p,
+  portfolioRepoUrl as p,
   router as r,
   socialLinks as s,
   useTranslations as u

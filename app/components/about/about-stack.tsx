@@ -30,12 +30,22 @@ export function AboutStack() {
 
 	return (
 		<section className='grid gap-6 lg:grid-cols-2'>
-			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
+			<div className='relative isolate overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.04))] p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
+				<div aria-hidden className='absolute inset-0 -z-10'>
+					<div className='absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(34,211,238,0.12),transparent)]' />
+					<div className='absolute -right-10 top-10 h-24 w-24 rounded-full bg-cyan-300/10 blur-3xl' />
+				</div>
+				<div aria-hidden className='mb-5 h-px w-16 bg-gradient-to-r from-cyan-300/80 to-transparent' />
 				<h2 className='text-2xl font-semibold text-white'>{about.skillsTitle}</h2>
 				<PillList items={about.skills} tone='accent' />
 			</div>
 
-			<div className='rounded-[1.75rem] border border-white/10 bg-white/5 p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
+			<div className='relative isolate overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.04))] p-6 shadow-xl shadow-slate-950/30 backdrop-blur'>
+				<div aria-hidden className='absolute inset-0 -z-10'>
+					<div className='absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),transparent)]' />
+					<div className='absolute -left-10 bottom-0 h-24 w-24 rounded-full bg-white/6 blur-3xl' />
+				</div>
+				<div aria-hidden className='mb-5 h-px w-16 bg-gradient-to-r from-white/50 to-transparent' />
 				<h2 className='text-2xl font-semibold text-white'>{about.toolsTitle}</h2>
 				<PillList items={about.tools} tone='muted' />
 			</div>

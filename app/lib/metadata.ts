@@ -48,6 +48,7 @@ export function createRootHead(locale: Locale) {
 		],
 		links: [
 			{ rel: 'icon', href: '/favicon.png', type: 'image/png' },
+			{ rel: 'alternate icon', href: '/favicon.svg', type: 'image/svg+xml' },
 			{ rel: 'apple-touch-icon', href: '/favicon.png' },
 			{ rel: 'manifest', href: '/manifest.json' }
 		]

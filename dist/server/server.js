@@ -45,7 +45,8 @@ function lazyInherit(target, source, sourceKey) {
     if (modified) Object.defineProperty(target, key, desc);
   }
 }
-const _needsNormRE = /(?:(?:^|\/)(?:\.|\.\.|%2e|%2e\.|\.%2e|%2e%2e)(?:\/|$))|[\\^\x80-\uffff]/i;
+const _needsNormRE = /(?:(?:^|\/)(?:\.|\.\.|%2e|%2e\.|\.%2e|%2e%2e)(?:\/|$))|[\\^#"<>{}`\x80-\uffff]/i;
+const _searchNeedsNormRE = /[#"'<>]/;
 const FastURL = /* @__PURE__ */ (() => {
   const NativeURL = globalThis.URL;
   const FastURL2 = class URL {
@@ -58,9 +59,11 @@ const FastURL = /* @__PURE__ */ (() => {
     #searchParams;
     #pos;
     constructor(url) {
-      if (typeof url === "string") if (url[0] === "/") this.#href = url;
-      else this.#url = new NativeURL(url);
-      else if (_needsNormRE.test(url.pathname)) this.#url = new NativeURL(`${url.protocol || "http:"}//${url.host || "localhost"}${url.pathname}${url.search || ""}`);
+      if (typeof url === "string") {
+        const isOriginForm = url[0] === "/";
+        if (isOriginForm && !_searchNeedsNormRE.test(url)) this.#href = url;
+        else this.#url = new NativeURL(isOriginForm ? `http://localhost${url}` : url);
+      } else if (_needsNormRE.test(url.pathname) || url.search && _searchNeedsNormRE.test(url.search)) this.#url = new NativeURL(`${url.protocol || "http:"}//${url.host || "localhost"}${url.pathname}${url.search || ""}`);
       else {
         this.#protocol = url.protocol;
         this.#host = url.host;
@@ -228,17 +231,18 @@ const NodeResponse = /* @__PURE__ */ (() => {
       else body = this._response.body;
       const headers = [];
       const initHeaders = this.#init?.headers;
-      const headerEntries = this.#response?.headers || this.#headers || (initHeaders ? Array.isArray(initHeaders) ? initHeaders : initHeaders?.entries ? initHeaders.entries() : Object.entries(initHeaders).map(([k2, v2]) => [k2.toLowerCase(), v2]) : void 0);
+      const headerEntries = this.#response?.headers || this.#headers || (initHeaders ? Array.isArray(initHeaders) ? initHeaders : initHeaders?.entries ? initHeaders.entries() : Object.entries(initHeaders) : void 0);
       let hasContentTypeHeader;
       let hasContentLength;
       if (headerEntries) for (const [key, value] of headerEntries) {
-        if (Array.isArray(value)) for (const v2 of value) headers.push([key, v2]);
-        else headers.push([key, value]);
-        if (key === "content-type") hasContentTypeHeader = true;
-        else if (key === "content-length") hasContentLength = true;
+        const lowerKey = typeof key === "string" ? key.toLowerCase() : String(key);
+        if (Array.isArray(value)) for (const v of value) headers.push(lowerKey, v);
+        else headers.push(lowerKey, value);
+        if (lowerKey === "content-type") hasContentTypeHeader = true;
+        else if (lowerKey === "content-length") hasContentLength = true;
       }
-      if (contentType && !hasContentTypeHeader) headers.push(["content-type", contentType]);
-      if (contentLength && !hasContentLength) headers.push(["content-length", String(contentLength)]);
+      if (contentType && !hasContentTypeHeader) headers.push("content-type", contentType);
+      if (contentLength && !hasContentLength) headers.push("content-length", String(contentLength));
       this.#init = void 0;
       this.#headers = void 0;
       this.#response = void 0;
@@ -440,9 +444,9 @@ function prepareResponse(val, event, config, nested) {
       if (val?.stack) error.stack = val.stack;
     }
     if (error.unhandled && !config.silent) console.error(error);
-    const { onError } = config;
+    const { onError: onError2 } = config;
     const errHeaders = event[kEventRes]?.[kEventResErrHeaders];
-    return onError && !nested ? Promise.resolve(onError(error, event)).catch((error2) => error2).then((newVal) => prepareResponse(newVal ?? val, event, config, true)) : errorResponse(error, config.debug, errHeaders);
+    return onError2 && !nested ? Promise.resolve(onError2(error, event)).catch((error2) => error2).then((newVal) => prepareResponse(newVal ?? val, event, config, true)) : errorResponse(error, config.debug, errHeaders);
   }
   const preparedRes = event[kEventRes];
   const preparedHeaders = preparedRes?.[kEventResHeaders];
@@ -542,7 +546,7 @@ var globalObj$1 = globalThis;
 if (!globalObj$1[GLOBAL_EVENT_STORAGE_KEY]) globalObj$1[GLOBAL_EVENT_STORAGE_KEY] = new AsyncLocalStorage();
 var eventStorage = globalObj$1[GLOBAL_EVENT_STORAGE_KEY];
 function isPromiseLike(value) {
-  return typeof value.then === "function";
+  return (typeof value === "object" || typeof value === "function") && value !== null && typeof value.then === "function";
 }
 function getSetCookieValues(headers) {
   const headersWithSetCookie = headers;
@@ -559,13 +563,23 @@ function mergeEventResponseHeaders(response, event) {
   for (const cookie of responseSetCookies) response.headers.append("set-cookie", cookie);
   for (const cookie of eventSetCookies) response.headers.append("set-cookie", cookie);
 }
-function attachResponseHeaders(value, event) {
-  if (isPromiseLike(value)) return value.then((resolved) => {
-    if (resolved instanceof Response) mergeEventResponseHeaders(resolved, event);
-    return resolved;
-  });
-  if (value instanceof Response) mergeEventResponseHeaders(value, event);
-  return value;
+function finalizeResponse(value, event) {
+  const response = ensureResponse(value);
+  mergeEventResponseHeaders(response, event);
+  return response;
+}
+function finalizeMaybeResponse(value, event) {
+  if (isPromiseLike(value)) return Promise.resolve(value).then((resolved) => finalizeResponse(resolved, event), (error) => finalizeResponse(handleResponseError(error), event));
+  return finalizeResponse(value, event);
+}
+function ensureResponse(value) {
+  if (value instanceof Response) return value;
+  return new Response("Internal Server Error", { status: 500 });
+}
+function handleResponseError(error) {
+  if (error instanceof Response) return error;
+  if (error instanceof Error) throw error;
+  return new Response("Internal Server Error", { status: 500 });
 }
 function requestHandler(handler) {
   return (request, requestOpts) => {
@@ -579,7 +593,13 @@ function requestHandler(handler) {
       });
       throw error;
     }
-    return toResponse(attachResponseHeaders(eventStorage.run({ h3Event }, () => handler(request, requestOpts)), h3Event), h3Event);
+    let response;
+    try {
+      response = eventStorage.run({ h3Event }, () => handler(request, requestOpts));
+    } catch (error) {
+      response = handleResponseError(error);
+    }
+    return toResponse(finalizeMaybeResponse(response, h3Event), h3Event);
   };
 }
 function getH3Event() {
@@ -591,8 +611,188 @@ function getResponse() {
   return getH3Event().res;
 }
 var HEADERS = { TSS_SHELL: "X-TSS_SHELL" };
+function isNotFound(obj) {
+  return obj?.isNotFound === true;
+}
+const rootRouteId = "__root__";
+function isRedirect(obj) {
+  return obj instanceof Response && !!obj.options;
+}
+function dehydrateSsrMatchId(id) {
+  return id.replaceAll("~", "~~").replaceAll("\0", "~0").replaceAll("�", "~r").replaceAll("/", "\0");
+}
+function createSieveCache(max) {
+  const cache = /* @__PURE__ */ new Map();
+  let hand;
+  let newest;
+  return {
+    get(key) {
+      const entry = cache.get(key);
+      if (!entry) return;
+      entry.visited = true;
+      return entry.value;
+    },
+    set(key, value) {
+      const existing = cache.get(key);
+      if (existing) {
+        existing.value = value;
+        return;
+      }
+      if (cache.size >= max) {
+        let node = hand?.next().value;
+        while (!node || node.visited) {
+          if (node) node.visited = false;
+          else hand = cache.values();
+          node = hand.next().value;
+        }
+        if (node === newest) hand = void 0;
+        cache.delete(node.key);
+      }
+      const entry = {
+        key,
+        value,
+        visited: false
+      };
+      newest = entry;
+      cache.set(key, entry);
+    },
+    clear() {
+      cache.clear();
+      hand = void 0;
+      newest = void 0;
+    }
+  };
+}
+function invariant() {
+  throw new Error("Invariant failed");
+}
+function executeRewriteInput(rewrite, url) {
+  const res = rewrite?.input?.({ url });
+  if (res) {
+    if (typeof res === "string") return new URL(res);
+    else if (res instanceof URL) return res;
+  }
+  return url;
+}
+var stateIndexKey = "__TSR_index";
+var protocolRelativePrefix = /^[\x00-\x20]*(?:[\\/][\t\n\r]*){2,}/;
+function normalizeProtocolRelative(url) {
+  const match = protocolRelativePrefix.exec(url);
+  return match ? "/" + url.slice(match[0].length) : url;
+}
+function normalizeHref(href) {
+  if (/[\x00-\x1f\x7f]/.test(href)) href = href.replace(/[\x00-\x1f\x7f]/g, (character) => "	\n\r".includes(character) ? "" : encodeURIComponent(character));
+  return normalizeProtocolRelative(href);
+}
+var noop = () => {
+};
+var ServerHistory = class {
+  constructor(location) {
+    this.location = location;
+  }
+  get length() {
+    return 1;
+  }
+  get subscribers() {
+    return this._subscribers ??= /* @__PURE__ */ new Set();
+  }
+  subscribe() {
+    return noop;
+  }
+  push() {
+  }
+  replace() {
+  }
+  go() {
+  }
+  back() {
+  }
+  forward() {
+  }
+  canGoBack() {
+    return false;
+  }
+  createHref(href) {
+    return normalizeHref(href);
+  }
+  block() {
+    return noop;
+  }
+  flush() {
+  }
+  destroy() {
+  }
+  notify() {
+  }
+  _getBlockers() {
+    return [];
+  }
+};
+function createServerHistory(href) {
+  return new ServerHistory(parseHref(href, void 0));
+}
+function parseHref(href, state) {
+  const sanitizedHref = normalizeHref(href);
+  const hashIndex = sanitizedHref.indexOf("#");
+  const searchIndex = sanitizedHref.indexOf("?");
+  if (!state) {
+    const key = createRandomKey();
+    state = {
+      [stateIndexKey]: 0,
+      key,
+      __TSR_key: key
+    };
+  }
+  return {
+    href: sanitizedHref,
+    pathname: sanitizedHref.substring(0, hashIndex > 0 ? searchIndex > 0 ? Math.min(hashIndex, searchIndex) : hashIndex : searchIndex > 0 ? searchIndex : sanitizedHref.length),
+    hash: hashIndex > -1 ? sanitizedHref.substring(hashIndex) : "",
+    search: searchIndex > -1 ? sanitizedHref.slice(searchIndex, hashIndex === -1 ? void 0 : hashIndex) : "",
+    state
+  };
+}
+function createRandomKey() {
+  return (Math.random() + 1).toString(36).substring(7);
+}
+function _getRenderedMatches(matches) {
+  const end = matches.findIndex((match) => match.status !== "success" || match._notFound) + 1;
+  return end && end < matches.length ? matches.slice(0, end) : matches;
+}
+function observeLate(callback, value) {
+  if (!callback) return;
+  try {
+    const result = callback(value);
+    if (result !== void 0) Promise.resolve(result).catch(() => {
+    });
+  } catch {
+  }
+}
+function waitForReason(value, signal, onLate, onLateError) {
+  const promise = Promise.resolve(value);
+  if (signal.aborted) {
+    promise.then((result) => observeLate(onLate, result), (error) => observeLate(onLateError, error));
+    return Promise.reject(signal.reason);
+  }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then((result) => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) observeLate(onLate, result);
+      else resolve(result);
+    }, (error) => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) observeLate(onLateError, error);
+      else reject(error);
+    });
+  });
+}
+function isPromise(value) {
+  return Boolean(value && typeof value === "object" && typeof value.then === "function");
+}
+const PATH_UNSAFE_RE = /[\x00-\x1f\x7f"<>`{}]/g;
 function sanitizePathSegment(segment) {
-  return segment.replace(/[\x00-\x1f\x7f]/g, "");
+  return segment.replace(PATH_UNSAFE_RE, (ch) => "%" + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"));
 }
 function decodeSegment(segment) {
   let decoded;
@@ -609,319 +809,33 @@ function decodeSegment(segment) {
   }
   return sanitizePathSegment(decoded);
 }
+function getUrlScheme(url) {
+  if (url[0] === "/") return;
+  if (!url.includes(":")) return;
+  return /^[\x00-\x20]*([a-z][a-z\d+.\t\n\r-]*:)/i.exec(url)?.[1]?.replace(/[\t\n\r]/g, "").toLowerCase();
+}
+const protocolRelativePrefixRegex = /^[\x00-\x20]*[\\/][\t\n\r]*[\\/]/;
+function isDangerousProtocol(url, allowlist) {
+  if (!url) return false;
+  if (protocolRelativePrefixRegex.test(url)) return true;
+  const scheme = getUrlScheme(url);
+  return scheme ? !allowlist.has(scheme) : false;
+}
 function decodePath(path) {
-  if (!path) return {
-    path,
-    handledProtocolRelativeURL: false
-  };
-  if (!/[%\\\x00-\x1f\x7f]/.test(path) && !path.startsWith("//")) return {
-    path,
-    handledProtocolRelativeURL: false
-  };
-  const re2 = /%25|%5C/gi;
-  let cursor = 0;
-  let result = "";
-  let match;
-  while (null !== (match = re2.exec(path))) {
-    result += decodeSegment(path.slice(cursor, match.index)) + match[0];
-    cursor = re2.lastIndex;
+  if (!path) return path;
+  let result = path;
+  if (/[%\\\x00-\x1f\x7f]/.test(path)) {
+    const re = /%25|%5C/gi;
+    let cursor = 0;
+    let match;
+    result = "";
+    while (null !== (match = re.exec(path))) {
+      result += decodeSegment(path.slice(cursor, match.index)) + match[0];
+      cursor = re.lastIndex;
+    }
+    result += decodeSegment(cursor ? path.slice(cursor) : path);
   }
-  result = result + decodeSegment(cursor ? path.slice(cursor) : path);
-  let handledProtocolRelativeURL = false;
-  if (result.startsWith("//")) {
-    handledProtocolRelativeURL = true;
-    result = "/" + result.replace(/^\/+/, "");
-  }
-  return {
-    path: result,
-    handledProtocolRelativeURL
-  };
-}
-function invariant() {
-  throw new Error("Invariant failed");
-}
-function createLRUCache(max) {
-  const cache = /* @__PURE__ */ new Map();
-  let oldest;
-  let newest;
-  const touch = (entry) => {
-    if (!entry.next) return;
-    if (!entry.prev) {
-      entry.next.prev = void 0;
-      oldest = entry.next;
-      entry.next = void 0;
-      if (newest) {
-        entry.prev = newest;
-        newest.next = entry;
-      }
-    } else {
-      entry.prev.next = entry.next;
-      entry.next.prev = entry.prev;
-      entry.next = void 0;
-      if (newest) {
-        newest.next = entry;
-        entry.prev = newest;
-      }
-    }
-    newest = entry;
-  };
-  return {
-    get(key) {
-      const entry = cache.get(key);
-      if (!entry) return void 0;
-      touch(entry);
-      return entry.value;
-    },
-    set(key, value) {
-      if (cache.size >= max && oldest) {
-        const toDelete = oldest;
-        cache.delete(toDelete.key);
-        if (toDelete.next) {
-          oldest = toDelete.next;
-          toDelete.next.prev = void 0;
-        }
-        if (toDelete === newest) newest = void 0;
-      }
-      const existing = cache.get(key);
-      if (existing) {
-        existing.value = value;
-        touch(existing);
-      } else {
-        const entry = {
-          key,
-          value,
-          prev: newest
-        };
-        if (newest) newest.next = entry;
-        newest = entry;
-        if (!oldest) oldest = entry;
-        cache.set(key, entry);
-      }
-    },
-    clear() {
-      cache.clear();
-      oldest = void 0;
-      newest = void 0;
-    }
-  };
-}
-function isNotFound(obj) {
-  return obj?.isNotFound === true;
-}
-const rootRouteId = "__root__";
-function isRedirect(obj) {
-  return obj instanceof Response && !!obj.options;
-}
-function isResolvedRedirect(obj) {
-  return isRedirect(obj) && !!obj.options.href;
-}
-function executeRewriteInput(rewrite, url) {
-  const res = rewrite?.input?.({ url });
-  if (res) {
-    if (typeof res === "string") return new URL(res);
-    else if (res instanceof URL) return res;
-  }
-  return url;
-}
-var stateIndexKey = "__TSR_index";
-function createHistory(opts) {
-  let location = opts.getLocation();
-  const subscribers = /* @__PURE__ */ new Set();
-  const notify = (action) => {
-    location = opts.getLocation();
-    subscribers.forEach((subscriber) => subscriber({
-      location,
-      action
-    }));
-  };
-  const handleIndexChange = (action) => {
-    if (opts.notifyOnIndexChange ?? true) notify(action);
-    else location = opts.getLocation();
-  };
-  const tryNavigation = async ({ task, navigateOpts, ...actionInfo }) => {
-    if (navigateOpts?.ignoreBlocker ?? false) {
-      task();
-      return;
-    }
-    const blockers = opts.getBlockers?.() ?? [];
-    const isPushOrReplace = actionInfo.type === "PUSH" || actionInfo.type === "REPLACE";
-    if (typeof document !== "undefined" && blockers.length && isPushOrReplace) for (const blocker of blockers) {
-      const nextLocation = parseHref(actionInfo.path, actionInfo.state);
-      if (await blocker.blockerFn({
-        currentLocation: location,
-        nextLocation,
-        action: actionInfo.type
-      })) {
-        opts.onBlocked?.();
-        return;
-      }
-    }
-    task();
-  };
-  return {
-    get location() {
-      return location;
-    },
-    get length() {
-      return opts.getLength();
-    },
-    subscribers,
-    subscribe: (cb) => {
-      subscribers.add(cb);
-      return () => {
-        subscribers.delete(cb);
-      };
-    },
-    push: (path, state, navigateOpts) => {
-      const currentIndex = location.state[stateIndexKey];
-      state = assignKeyAndIndex(currentIndex + 1, state);
-      tryNavigation({
-        task: () => {
-          opts.pushState(path, state);
-          notify({ type: "PUSH" });
-        },
-        navigateOpts,
-        type: "PUSH",
-        path,
-        state
-      });
-    },
-    replace: (path, state, navigateOpts) => {
-      const currentIndex = location.state[stateIndexKey];
-      state = assignKeyAndIndex(currentIndex, state);
-      tryNavigation({
-        task: () => {
-          opts.replaceState(path, state);
-          notify({ type: "REPLACE" });
-        },
-        navigateOpts,
-        type: "REPLACE",
-        path,
-        state
-      });
-    },
-    go: (index, navigateOpts) => {
-      tryNavigation({
-        task: () => {
-          opts.go(index);
-          handleIndexChange({
-            type: "GO",
-            index
-          });
-        },
-        navigateOpts,
-        type: "GO"
-      });
-    },
-    back: (navigateOpts) => {
-      tryNavigation({
-        task: () => {
-          opts.back(navigateOpts?.ignoreBlocker ?? false);
-          handleIndexChange({ type: "BACK" });
-        },
-        navigateOpts,
-        type: "BACK"
-      });
-    },
-    forward: (navigateOpts) => {
-      tryNavigation({
-        task: () => {
-          opts.forward(navigateOpts?.ignoreBlocker ?? false);
-          handleIndexChange({ type: "FORWARD" });
-        },
-        navigateOpts,
-        type: "FORWARD"
-      });
-    },
-    canGoBack: () => location.state[stateIndexKey] !== 0,
-    createHref: (str) => opts.createHref(str),
-    block: (blocker) => {
-      if (!opts.setBlockers) return () => {
-      };
-      const blockers = opts.getBlockers?.() ?? [];
-      opts.setBlockers([...blockers, blocker]);
-      return () => {
-        const blockers2 = opts.getBlockers?.() ?? [];
-        opts.setBlockers?.(blockers2.filter((b2) => b2 !== blocker));
-      };
-    },
-    flush: () => opts.flush?.(),
-    destroy: () => opts.destroy?.(),
-    notify
-  };
-}
-function assignKeyAndIndex(index, state) {
-  if (!state) state = {};
-  const key = createRandomKey();
-  return {
-    ...state,
-    key,
-    __TSR_key: key,
-    [stateIndexKey]: index
-  };
-}
-function createMemoryHistory(opts = { initialEntries: ["/"] }) {
-  const entries = opts.initialEntries;
-  let index = opts.initialIndex ? Math.min(Math.max(opts.initialIndex, 0), entries.length - 1) : entries.length - 1;
-  const states = entries.map((_entry, index2) => assignKeyAndIndex(index2, void 0));
-  const getLocation = () => parseHref(entries[index], states[index]);
-  let blockers = [];
-  const _getBlockers = () => blockers;
-  const _setBlockers = (newBlockers) => blockers = newBlockers;
-  return createHistory({
-    getLocation,
-    getLength: () => entries.length,
-    pushState: (path, state) => {
-      if (index < entries.length - 1) {
-        entries.splice(index + 1);
-        states.splice(index + 1);
-      }
-      states.push(state);
-      entries.push(path);
-      index = Math.max(entries.length - 1, 0);
-    },
-    replaceState: (path, state) => {
-      states[index] = state;
-      entries[index] = path;
-    },
-    back: () => {
-      index = Math.max(index - 1, 0);
-    },
-    forward: () => {
-      index = Math.min(index + 1, entries.length - 1);
-    },
-    go: (n2) => {
-      index = Math.min(Math.max(index + n2, 0), entries.length - 1);
-    },
-    createHref: (path) => path,
-    getBlockers: _getBlockers,
-    setBlockers: _setBlockers
-  });
-}
-function sanitizePath(path) {
-  let sanitized = path.replace(/[\x00-\x1f\x7f]/g, "");
-  if (sanitized.startsWith("//")) sanitized = "/" + sanitized.replace(/^\/+/, "");
-  return sanitized;
-}
-function parseHref(href, state) {
-  const sanitizedHref = sanitizePath(href);
-  const hashIndex = sanitizedHref.indexOf("#");
-  const searchIndex = sanitizedHref.indexOf("?");
-  const addedKey = createRandomKey();
-  return {
-    href: sanitizedHref,
-    pathname: sanitizedHref.substring(0, hashIndex > 0 ? searchIndex > 0 ? Math.min(hashIndex, searchIndex) : hashIndex : searchIndex > 0 ? searchIndex : sanitizedHref.length),
-    hash: hashIndex > -1 ? sanitizedHref.substring(hashIndex) : "",
-    search: searchIndex > -1 ? sanitizedHref.slice(searchIndex, hashIndex === -1 ? void 0 : hashIndex) : "",
-    state: state || {
-      [stateIndexKey]: 0,
-      key: addedKey,
-      __TSR_key: addedKey
-    }
-  };
-}
-function createRandomKey() {
-  return (Math.random() + 1).toString(36).substring(7);
+  return result;
 }
 function getAssetCrossOrigin(assetCrossOrigin, kind) {
   return;
@@ -967,27 +881,141 @@ function createInlineCssStyleAsset(css) {
 function createInlineCssPlaceholderAsset() {
   return { attrs: { suppressHydrationWarning: true } };
 }
-const GLOBAL_TSR = "$_TSR";
-const TSR_SCRIPT_BARRIER_ID = "$tsr-stream-barrier";
-var M = ((i) => (i[i.AggregateError = 1] = "AggregateError", i[i.ArrowFunction = 2] = "ArrowFunction", i[i.ErrorPrototypeStack = 4] = "ErrorPrototypeStack", i[i.ObjectAssign = 8] = "ObjectAssign", i[i.BigIntTypedArray = 16] = "BigIntTypedArray", i[i.RegExp = 32] = "RegExp", i))(M || {});
-var v = Symbol.asyncIterator, pr = Symbol.hasInstance, R = Symbol.isConcatSpreadable, C = Symbol.iterator, dr = Symbol.match, gr = Symbol.matchAll, yr = Symbol.replace, Nr = Symbol.search, br = Symbol.species, vr = Symbol.split, Cr = Symbol.toPrimitive, P$1 = Symbol.toStringTag, Ar = Symbol.unscopables;
-var tt = { 0: "Symbol.asyncIterator", 1: "Symbol.hasInstance", 2: "Symbol.isConcatSpreadable", 3: "Symbol.iterator", 4: "Symbol.match", 5: "Symbol.matchAll", 6: "Symbol.replace", 7: "Symbol.search", 8: "Symbol.species", 9: "Symbol.split", 10: "Symbol.toPrimitive", 11: "Symbol.toStringTag", 12: "Symbol.unscopables" }, ve = { [v]: 0, [pr]: 1, [R]: 2, [C]: 3, [dr]: 4, [gr]: 5, [yr]: 6, [Nr]: 7, [br]: 8, [vr]: 9, [Cr]: 10, [P$1]: 11, [Ar]: 12 }, nt = { 0: v, 1: pr, 2: R, 3: C, 4: dr, 5: gr, 6: yr, 7: Nr, 8: br, 9: vr, 10: Cr, 11: P$1, 12: Ar }, ot = { 2: "!0", 3: "!1", 1: "void 0", 0: "null", 4: "-0", 5: "1/0", 6: "-1/0", 7: "0/0" }, o = void 0, at = { 2: true, 3: false, 1: o, 0: null, 4: -0, 5: Number.POSITIVE_INFINITY, 6: Number.NEGATIVE_INFINITY, 7: Number.NaN };
-var Ce = { 0: "Error", 1: "EvalError", 2: "RangeError", 3: "ReferenceError", 4: "SyntaxError", 5: "TypeError", 6: "URIError" }, st = { 0: Error, 1: EvalError, 2: RangeError, 3: ReferenceError, 4: SyntaxError, 5: TypeError, 6: URIError };
-function c(e, r, t, n2, a, s, i, u, l, g, S, d) {
-  return { t: e, i: r, s: t, c: n2, m: a, p: s, e: i, a: u, f: l, b: g, o: S, l: d };
+function createSerializationAdapter(opts) {
+  return opts;
 }
-function B(e) {
-  return c(2, o, e, o, o, o, o, o, o, o, o, o);
+const SYM_ASYNC_ITERATOR = Symbol.asyncIterator;
+const SYM_HAS_INSTANCE = Symbol.hasInstance;
+const SYM_IS_CONCAT_SPREADABLE = Symbol.isConcatSpreadable;
+const SYM_ITERATOR = Symbol.iterator;
+const SYM_MATCH = Symbol.match;
+const SYM_MATCH_ALL = Symbol.matchAll;
+const SYM_REPLACE = Symbol.replace;
+const SYM_SEARCH = Symbol.search;
+const SYM_SPECIES = Symbol.species;
+const SYM_SPLIT = Symbol.split;
+const SYM_TO_PRIMITIVE = Symbol.toPrimitive;
+const SYM_TO_STRING_TAG = Symbol.toStringTag;
+const SYM_UNSCOPABLES = Symbol.unscopables;
+const SYMBOL_STRING = {
+  [0]: "Symbol.asyncIterator",
+  [1]: "Symbol.hasInstance",
+  [2]: "Symbol.isConcatSpreadable",
+  [3]: "Symbol.iterator",
+  [4]: "Symbol.match",
+  [5]: "Symbol.matchAll",
+  [6]: "Symbol.replace",
+  [7]: "Symbol.search",
+  [8]: "Symbol.species",
+  [9]: "Symbol.split",
+  [10]: "Symbol.toPrimitive",
+  [11]: "Symbol.toStringTag",
+  [12]: "Symbol.unscopables"
+};
+const INV_SYMBOL_REF = {
+  [SYM_ASYNC_ITERATOR]: 0,
+  [SYM_HAS_INSTANCE]: 1,
+  [SYM_IS_CONCAT_SPREADABLE]: 2,
+  [SYM_ITERATOR]: 3,
+  [SYM_MATCH]: 4,
+  [SYM_MATCH_ALL]: 5,
+  [SYM_REPLACE]: 6,
+  [SYM_SEARCH]: 7,
+  [SYM_SPECIES]: 8,
+  [SYM_SPLIT]: 9,
+  [SYM_TO_PRIMITIVE]: 10,
+  [SYM_TO_STRING_TAG]: 11,
+  [SYM_UNSCOPABLES]: 12
+};
+const SYMBOL_REF = {
+  [0]: SYM_ASYNC_ITERATOR,
+  [1]: SYM_HAS_INSTANCE,
+  [2]: SYM_IS_CONCAT_SPREADABLE,
+  [3]: SYM_ITERATOR,
+  [4]: SYM_MATCH,
+  [5]: SYM_MATCH_ALL,
+  [6]: SYM_REPLACE,
+  [7]: SYM_SEARCH,
+  [8]: SYM_SPECIES,
+  [9]: SYM_SPLIT,
+  [10]: SYM_TO_PRIMITIVE,
+  [11]: SYM_TO_STRING_TAG,
+  [12]: SYM_UNSCOPABLES
+};
+const CONSTANT_STRING = {
+  [2]: "!0",
+  [3]: "!1",
+  [1]: "void 0",
+  [0]: "null",
+  [4]: "-0",
+  [5]: "1/0",
+  [6]: "-1/0",
+  [7]: "0/0"
+};
+const CONSTANT_VAL = {
+  [2]: true,
+  [3]: false,
+  [1]: void 0,
+  [0]: null,
+  [4]: -0,
+  [5]: Number.POSITIVE_INFINITY,
+  [6]: Number.NEGATIVE_INFINITY,
+  [7]: NaN
+};
+const ERROR_CONSTRUCTOR_STRING = {
+  [0]: "Error",
+  [1]: "EvalError",
+  [2]: "RangeError",
+  [3]: "ReferenceError",
+  [4]: "SyntaxError",
+  [5]: "TypeError",
+  [6]: "URIError"
+};
+const ERROR_CONSTRUCTOR = {
+  [0]: Error,
+  [1]: EvalError,
+  [2]: RangeError,
+  [3]: ReferenceError,
+  [4]: SyntaxError,
+  [5]: TypeError,
+  [6]: URIError
+};
+function createSerovalNode(t, i, s, c, m, p, e, a, f, b, o, l) {
+  return {
+    t,
+    i,
+    s,
+    c,
+    m,
+    p,
+    e,
+    a,
+    f,
+    b,
+    o,
+    l
+  };
 }
-var H = B(2), J = B(3), Ae = B(1), Ee = B(0), it = B(4), ut = B(5), lt = B(6), ct = B(7);
-function mn(e) {
-  switch (e) {
+function createConstantNode(value) {
+  return createSerovalNode(2, void 0, value, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+const TRUE_NODE = /* @__PURE__ */ createConstantNode(2);
+const FALSE_NODE = /* @__PURE__ */ createConstantNode(3);
+const UNDEFINED_NODE = /* @__PURE__ */ createConstantNode(1);
+const NULL_NODE = /* @__PURE__ */ createConstantNode(0);
+const NEG_ZERO_NODE = /* @__PURE__ */ createConstantNode(4);
+const INFINITY_NODE = /* @__PURE__ */ createConstantNode(5);
+const NEG_INFINITY_NODE = /* @__PURE__ */ createConstantNode(6);
+const NAN_NODE = /* @__PURE__ */ createConstantNode(7);
+const MIN_JSON_STRINGIFY_LENGTH = 64;
+const JSON_ESCAPE_DIFFERENCES = /[\x00-\x07\x0b\x0e-\x1f<\u2028\u2029\ud800-\udfff]/;
+function serializeChar(str) {
+  switch (str) {
     case '"':
       return '\\"';
     case "\\":
       return "\\\\";
-    case `
-`:
+    case "\n":
       return "\\n";
     case "\r":
       return "\\r";
@@ -1004,23 +1032,33 @@ function mn(e) {
     case "\u2029":
       return "\\u2029";
     default:
-      return o;
+      return;
   }
 }
-function y(e) {
-  let r = "", t = 0, n2;
-  for (let a = 0, s = e.length; a < s; a++) n2 = mn(e[a]), n2 && (r += e.slice(t, a) + n2, t = a + 1);
-  return t === 0 ? r = e : r += e.slice(t), r;
+function serializeString(str) {
+  if (str.length >= MIN_JSON_STRINGIFY_LENGTH && !JSON_ESCAPE_DIFFERENCES.test(str)) return JSON.stringify(str).slice(1, -1);
+  let result = "";
+  let lastPos = 0;
+  let replacement;
+  for (let i = 0, len = str.length; i < len; i++) {
+    replacement = serializeChar(str[i]);
+    if (replacement) {
+      result += str.slice(lastPos, i) + replacement;
+      lastPos = i + 1;
+    }
+  }
+  if (lastPos === 0) result = str;
+  else result += str.slice(lastPos);
+  return result;
 }
-function pn(e) {
-  switch (e) {
+function deserializeReplacer(str) {
+  switch (str) {
     case "\\\\":
       return "\\";
     case '\\"':
       return '"';
     case "\\n":
-      return `
-`;
+      return "\n";
     case "\\r":
       return "\r";
     case "\\b":
@@ -1036,478 +1074,934 @@ function pn(e) {
     case "\\u2029":
       return "\u2029";
     default:
-      return e;
+      return str;
   }
 }
-function D(e) {
-  return e.replace(/(\\\\|\\"|\\n|\\r|\\b|\\t|\\f|\\u2028|\\u2029|\\x3C)/g, pn);
+function deserializeString(str) {
+  if (typeof str === "string" && !str.includes("\\")) return str;
+  return str.replace(/(\\\\|\\"|\\n|\\r|\\b|\\t|\\f|\\u2028|\\u2029|\\x3C)/g, deserializeReplacer);
 }
-var L = "__SEROVAL_REFS__", le = "$R", Ie = `self.${le}`;
-function dn(e) {
-  return e == null ? `${Ie}=${Ie}||[]` : `(${Ie}=${Ie}||{})["${y(e)}"]=[]`;
+const STEP_ERROR_CODES = {
+  parsing: 1,
+  serialization: 2,
+  deserialization: 3
+};
+function getErrorMessageProd(type) {
+  return `Seroval Error (step: ${STEP_ERROR_CODES[type]})`;
 }
-var Er = /* @__PURE__ */ new Map(), U = /* @__PURE__ */ new Map();
-function Ir(e) {
-  return Er.has(e);
-}
-function yn(e) {
-  return U.has(e);
-}
-function ft(e) {
-  if (Ir(e)) return Er.get(e);
-  throw new Re(e);
-}
-function St(e) {
-  if (yn(e)) return U.get(e);
-  throw new Pe(e);
-}
-typeof globalThis != "undefined" ? Object.defineProperty(globalThis, L, { value: U, configurable: true, writable: false, enumerable: false }) : typeof window != "undefined" ? Object.defineProperty(window, L, { value: U, configurable: true, writable: false, enumerable: false }) : typeof self != "undefined" ? Object.defineProperty(self, L, { value: U, configurable: true, writable: false, enumerable: false }) : typeof global != "undefined" && Object.defineProperty(global, L, { value: U, configurable: true, writable: false, enumerable: false });
-function xe(e) {
-  return e instanceof EvalError ? 1 : e instanceof RangeError ? 2 : e instanceof ReferenceError ? 3 : e instanceof SyntaxError ? 4 : e instanceof TypeError ? 5 : e instanceof URIError ? 6 : 0;
-}
-function Nn(e) {
-  let r = Ce[xe(e)];
-  return e.name !== r ? { name: e.name } : e.constructor.name !== r ? { name: e.constructor.name } : {};
-}
-function Z(e, r) {
-  let t = Nn(e), n2 = Object.getOwnPropertyNames(e);
-  for (let a = 0, s = n2.length, i; a < s; a++) i = n2[a], i !== "name" && i !== "message" && (i === "stack" ? r & 4 && (t = t || {}, t[i] = e[i]) : (t = t || {}, t[i] = e[i]));
-  return t;
-}
-function Te(e) {
-  return Object.isFrozen(e) ? 3 : Object.isSealed(e) ? 2 : Object.isExtensible(e) ? 0 : 1;
-}
-function Oe(e) {
-  switch (e) {
-    case Number.POSITIVE_INFINITY:
-      return ut;
-    case Number.NEGATIVE_INFINITY:
-      return lt;
-  }
-  return e !== e ? ct : Object.is(e, -0) ? it : c(0, o, e, o, o, o, o, o, o, o, o, o);
-}
-function $(e) {
-  return c(1, o, y(e), o, o, o, o, o, o, o, o, o);
-}
-function we(e) {
-  return c(3, o, "" + e, o, o, o, o, o, o, o, o, o);
-}
-function pt(e) {
-  return c(4, e, o, o, o, o, o, o, o, o, o, o);
-}
-function he(e, r) {
-  let t = r.valueOf();
-  return c(5, e, t !== t ? "" : r.toISOString(), o, o, o, o, o, o, o, o, o);
-}
-function ze(e, r) {
-  return c(6, e, o, y(r.source), r.flags, o, o, o, o, o, o, o);
-}
-function dt(e, r) {
-  return c(17, e, ve[r], o, o, o, o, o, o, o, o, o);
-}
-function gt(e, r) {
-  return c(18, e, y(ft(r)), o, o, o, o, o, o, o, o, o);
-}
-function ce(e, r, t) {
-  return c(25, e, t, y(r), o, o, o, o, o, o, o, o);
-}
-function _e(e, r, t) {
-  return c(9, e, o, o, o, o, o, t, o, o, Te(r), o);
-}
-function ke(e, r) {
-  return c(21, e, o, o, o, o, o, o, r, o, o, o);
-}
-function De(e, r, t) {
-  return c(15, e, o, r.constructor.name, o, o, o, o, t, r.byteOffset, o, r.length);
-}
-function Fe(e, r, t) {
-  return c(16, e, o, r.constructor.name, o, o, o, o, t, r.byteOffset, o, r.byteLength);
-}
-function Be(e, r, t) {
-  return c(20, e, o, o, o, o, o, o, t, r.byteOffset, o, r.byteLength);
-}
-function Ve(e, r, t) {
-  return c(13, e, xe(r), o, y(r.message), t, o, o, o, o, o, o);
-}
-function Me(e, r, t) {
-  return c(14, e, xe(r), o, y(r.message), t, o, o, o, o, o, o);
-}
-function Le(e, r) {
-  return c(7, e, o, o, o, o, o, r, o, o, o, o);
-}
-function Ue(e, r) {
-  return c(28, o, o, o, o, o, o, [e, r], o, o, o, o);
-}
-function je(e, r) {
-  return c(30, o, o, o, o, o, o, [e, r], o, o, o, o);
-}
-function Ye(e, r, t) {
-  return c(31, e, o, o, o, o, o, t, r, o, o, o);
-}
-function qe(e, r) {
-  return c(32, e, o, o, o, o, o, o, r, o, o, o);
-}
-function We(e, r) {
-  return c(33, e, o, o, o, o, o, o, r, o, o, o);
-}
-function Ge(e, r) {
-  return c(34, e, o, o, o, o, o, o, r, o, o, o);
-}
-function Ke(e, r, t, n2) {
-  return c(35, e, t, o, o, o, o, r, o, o, o, n2);
-}
-var bn = { parsing: 1, serialization: 2, deserialization: 3 };
-function vn(e) {
-  return `Seroval Error (step: ${bn[e]})`;
-}
-var Cn = (e, r) => vn(e), fe = class extends Error {
-  constructor(t, n2) {
-    super(Cn(t));
-    this.cause = n2;
-  }
-}, z = class extends fe {
-  constructor(r) {
-    super("parsing", r);
-  }
-}, He = class extends fe {
-  constructor(r) {
-    super("deserialization", r);
+const getErrorMessage = (type, cause) => getErrorMessageProd(type);
+var SerovalError = class extends Error {
+  constructor(type, cause) {
+    super(getErrorMessage(type));
+    this.cause = cause;
   }
 };
-function _(e) {
-  return `Seroval Error (specific: ${e})`;
+var SerovalParserError = class extends SerovalError {
+  constructor(cause) {
+    super("parsing", cause);
+  }
+};
+var SerovalDeserializationError = class extends SerovalError {
+  constructor(cause) {
+    super("deserialization", cause);
+  }
+};
+function getSpecificErrorMessage(code) {
+  return `Seroval Error (specific: ${code})`;
 }
-var x$1 = class x extends Error {
-  constructor(t) {
-    super(_(1));
-    this.value = t;
-  }
-}, h = class extends Error {
-  constructor(r) {
-    super(_(2));
-  }
-}, X = class extends Error {
-  constructor(r) {
-    super(_(3));
-  }
-}, V = class extends Error {
-  constructor(r) {
-    super(_(4));
-  }
-}, Re = class extends Error {
-  constructor(t) {
-    super(_(5));
-    this.value = t;
-  }
-}, Pe = class extends Error {
-  constructor(r) {
-    super(_(6));
-  }
-}, Je = class extends Error {
-  constructor(r) {
-    super(_(7));
-  }
-}, O = class extends Error {
-  constructor(r) {
-    super(_(8));
-  }
-}, Q = class extends Error {
-  constructor(r) {
-    super(_(9));
+var SerovalUnsupportedTypeError = class extends Error {
+  constructor(value) {
+    super(getSpecificErrorMessage(1));
+    this.value = value;
   }
 };
-var j = class {
-  constructor(r, t) {
-    this.value = r;
-    this.replacement = t;
+var SerovalUnsupportedNodeError = class extends Error {
+  constructor(node) {
+    super(getSpecificErrorMessage(2));
   }
 };
-var ee$1 = () => {
-  let e = { p: 0, s: 0, f: 0 };
-  return e.p = new Promise((r, t) => {
-    e.s = r, e.f = t;
-  }), e;
-}, An = (e, r) => {
-  e.s(r), e.p.s = 1, e.p.v = r;
-}, En = (e, r) => {
-  e.f(r), e.p.s = 2, e.p.v = r;
-}, Nt = ee$1.toString(), bt = An.toString(), vt = En.toString(), Pr = () => {
-  let e = [], r = [], t = true, n2 = false, a = 0, s = (l, g, S) => {
-    for (S = 0; S < a; S++) r[S] && r[S][g](l);
-  }, i = (l, g, S, d) => {
-    for (g = 0, S = e.length; g < S; g++) d = e[g], !t && g === S - 1 ? l[n2 ? "return" : "throw"](d) : l.next(d);
-  }, u = (l, g) => (t && (g = a++, r[g] = l), i(l), () => {
-    t && (r[g] = r[a], r[a--] = void 0);
-  });
-  return { __SEROVAL_STREAM__: true, on: (l) => u(l), next: (l) => {
-    t && (e.push(l), s(l, "next"));
-  }, throw: (l) => {
-    t && (e.push(l), s(l, "throw"), t = false, n2 = false, r.length = 0);
-  }, return: (l) => {
-    t && (e.push(l), s(l, "return"), t = false, n2 = true, r.length = 0);
-  } };
-}, Ct = Pr.toString(), xr = (e) => (r) => () => {
-  let t = 0, n2 = { [e]: () => n2, next: () => {
-    if (t > r.d) return { done: true, value: void 0 };
-    let a = t++, s = r.v[a];
-    if (a === r.t) throw s;
-    return { done: a === r.d, value: s };
-  } };
-  return n2;
-}, At = xr.toString(), Tr = (e, r) => (t) => () => {
-  let n2 = 0, a = -1, s = false, i = [], u = [], l = (S = 0, d = u.length) => {
-    for (; S < d; S++) u[S].s({ done: true, value: void 0 });
-  };
-  t.on({ next: (S) => {
-    let d = u.shift();
-    d && d.s({ done: false, value: S }), i.push(S);
-  }, throw: (S) => {
-    let d = u.shift();
-    d && d.f(S), l(), a = i.length, s = true, i.push(S);
-  }, return: (S) => {
-    let d = u.shift();
-    d && d.s({ done: true, value: S }), l(), a = i.length, i.push(S);
-  } });
-  let g = { [e]: () => g, next: () => {
-    if (a === -1) {
-      let G = n2++;
-      if (G >= i.length) {
-        let rt = r();
-        return u.push(rt), rt.p;
+var SerovalMissingPluginError = class extends Error {
+  constructor(tag) {
+    super(getSpecificErrorMessage(3));
+  }
+};
+var SerovalMissingInstanceError = class extends Error {
+  constructor(tag) {
+    super(getSpecificErrorMessage(4));
+  }
+};
+var SerovalMissingReferenceError = class extends Error {
+  constructor(value) {
+    super(getSpecificErrorMessage(5));
+    this.value = value;
+  }
+};
+var SerovalMissingReferenceForIdError = class extends Error {
+  constructor(id) {
+    super(getSpecificErrorMessage(6));
+  }
+};
+var SerovalUnknownTypedArrayError = class extends Error {
+  constructor(name) {
+    super(getSpecificErrorMessage(7));
+  }
+};
+var SerovalMalformedNodeError = class extends Error {
+  constructor(node) {
+    super(getSpecificErrorMessage(8));
+  }
+};
+var SerovalDepthLimitError = class extends Error {
+  constructor(limit) {
+    super(getSpecificErrorMessage(9));
+  }
+};
+const REFERENCES_KEY = "__SEROVAL_REFS__";
+const GLOBAL_CONTEXT_R = `self.$R`;
+function getCrossReferenceHeader(id) {
+  return `(${GLOBAL_CONTEXT_R}=${GLOBAL_CONTEXT_R}||{})["${serializeString(id)}"]=[]`;
+}
+const REFERENCE = /* @__PURE__ */ new Map();
+const INV_REFERENCE = /* @__PURE__ */ new Map();
+function hasReferenceID(value) {
+  return REFERENCE.has(value);
+}
+function hasReference(id) {
+  return INV_REFERENCE.has(id);
+}
+function getReferenceID(value) {
+  if (hasReferenceID(value)) return REFERENCE.get(value);
+  throw new SerovalMissingReferenceError(value);
+}
+function getReference(id) {
+  if (hasReference(id)) return INV_REFERENCE.get(id);
+  throw new SerovalMissingReferenceForIdError(id);
+}
+if (typeof globalThis !== "undefined") Object.defineProperty(globalThis, REFERENCES_KEY, {
+  value: INV_REFERENCE,
+  configurable: true,
+  writable: false,
+  enumerable: false
+});
+else if (typeof window !== "undefined") Object.defineProperty(window, REFERENCES_KEY, {
+  value: INV_REFERENCE,
+  configurable: true,
+  writable: false,
+  enumerable: false
+});
+else if (typeof self !== "undefined") Object.defineProperty(self, REFERENCES_KEY, {
+  value: INV_REFERENCE,
+  configurable: true,
+  writable: false,
+  enumerable: false
+});
+else if (typeof global !== "undefined") Object.defineProperty(global, REFERENCES_KEY, {
+  value: INV_REFERENCE,
+  configurable: true,
+  writable: false,
+  enumerable: false
+});
+function getErrorConstructor(error) {
+  if (error instanceof EvalError) return 1;
+  if (error instanceof RangeError) return 2;
+  if (error instanceof ReferenceError) return 3;
+  if (error instanceof SyntaxError) return 4;
+  if (error instanceof TypeError) return 5;
+  if (error instanceof URIError) return 6;
+  return 0;
+}
+function getInitialErrorOptions(error) {
+  const construct = ERROR_CONSTRUCTOR_STRING[getErrorConstructor(error)];
+  if (error.name !== construct) return { name: error.name };
+  if (error.constructor.name !== construct) return { name: error.constructor.name };
+  return {};
+}
+function getErrorOptions(error, features) {
+  let options = getInitialErrorOptions(error);
+  const names = Object.getOwnPropertyNames(error);
+  for (let i = 0, len = names.length, name; i < len; i++) {
+    name = names[i];
+    if (name !== "name" && name !== "message") {
+      if (name === "stack") {
+        if (features & 4) {
+          options = options || {};
+          options[name] = error[name];
+        }
+      } else {
+        options = options || {};
+        options[name] = error[name];
       }
-      return { done: false, value: i[G] };
     }
-    if (n2 > a) return { done: true, value: void 0 };
-    let S = n2++, d = i[S];
-    if (S !== a) return { done: false, value: d };
-    if (s) throw d;
-    return { done: true, value: d };
+  }
+  return options;
+}
+function getObjectFlag(obj) {
+  if (Object.isFrozen(obj)) return 3;
+  if (Object.isSealed(obj)) return 2;
+  if (Object.isExtensible(obj)) return 0;
+  return 1;
+}
+function createNumberNode(value) {
+  switch (value) {
+    case Number.POSITIVE_INFINITY:
+      return INFINITY_NODE;
+    case Number.NEGATIVE_INFINITY:
+      return NEG_INFINITY_NODE;
+  }
+  if (value !== value) return NAN_NODE;
+  if (Object.is(value, -0)) return NEG_ZERO_NODE;
+  return createSerovalNode(0, void 0, value, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createStringNode(value) {
+  return createSerovalNode(1, void 0, serializeString(value), void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createBigIntNode(current) {
+  return createSerovalNode(3, void 0, "" + current, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createIndexedValueNode(id) {
+  return createSerovalNode(4, id, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createDateNode(id, current) {
+  const timestamp = current.valueOf();
+  return createSerovalNode(5, id, timestamp !== timestamp ? "" : current.toISOString(), void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createTemporalNode(id, type, current) {
+  return createSerovalNode(36, id, current.toString(), type, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createRegExpNode(id, current) {
+  return createSerovalNode(6, id, void 0, serializeString(current.source), current.flags, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createWKSymbolNode(id, current) {
+  return createSerovalNode(17, id, INV_SYMBOL_REF[current], void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createReferenceNode(id, ref) {
+  return createSerovalNode(18, id, serializeString(getReferenceID(ref)), void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createPluginNode(id, tag, value) {
+  return createSerovalNode(25, id, value, serializeString(tag), void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createArrayNode(id, current, parsedItems) {
+  return createSerovalNode(9, id, void 0, void 0, void 0, void 0, void 0, parsedItems, void 0, void 0, getObjectFlag(current), void 0);
+}
+function createBoxedNode(id, boxed) {
+  return createSerovalNode(21, id, void 0, void 0, void 0, void 0, void 0, void 0, boxed, void 0, void 0, void 0);
+}
+const MAX_TYPED_ARRAY_LENGTH = 1e6;
+function createTypedArrayNode(id, current, buffer) {
+  if (current.length > MAX_TYPED_ARRAY_LENGTH) throw new SerovalUnsupportedTypeError(current);
+  return createSerovalNode(15, id, void 0, current.constructor.name, void 0, void 0, void 0, void 0, buffer, current.byteOffset, void 0, current.length);
+}
+function createBigIntTypedArrayNode(id, current, buffer) {
+  if (current.length > MAX_TYPED_ARRAY_LENGTH) throw new SerovalUnsupportedTypeError(current);
+  return createSerovalNode(16, id, void 0, current.constructor.name, void 0, void 0, void 0, void 0, buffer, current.byteOffset, void 0, current.length);
+}
+function createDataViewNode(id, current, buffer) {
+  if (current.byteLength > MAX_TYPED_ARRAY_LENGTH) throw new SerovalUnsupportedTypeError(current);
+  return createSerovalNode(20, id, void 0, void 0, void 0, void 0, void 0, void 0, buffer, current.byteOffset, void 0, current.byteLength);
+}
+function createErrorNode(id, current, options) {
+  return createSerovalNode(13, id, getErrorConstructor(current), void 0, serializeString(current.message), options, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createAggregateErrorNode(id, current, options) {
+  return createSerovalNode(14, id, getErrorConstructor(current), void 0, serializeString(current.message), options, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function createSetNode(id, items) {
+  return createSerovalNode(7, id, void 0, void 0, void 0, void 0, void 0, items, void 0, void 0, void 0, void 0);
+}
+function createIteratorFactoryInstanceNode(factory, items) {
+  return createSerovalNode(28, void 0, void 0, void 0, void 0, void 0, void 0, [factory, items], void 0, void 0, void 0, void 0);
+}
+function createAsyncIteratorFactoryInstanceNode(factory, items) {
+  return createSerovalNode(30, void 0, void 0, void 0, void 0, void 0, void 0, [factory, items], void 0, void 0, void 0, void 0);
+}
+function createStreamConstructorNode(id, factory, sequence) {
+  return createSerovalNode(31, id, void 0, void 0, void 0, void 0, void 0, sequence, factory, void 0, void 0, void 0);
+}
+function createStreamNextNode(id, parsed) {
+  return createSerovalNode(32, id, void 0, void 0, void 0, void 0, void 0, void 0, parsed, void 0, void 0, void 0);
+}
+function createStreamThrowNode(id, parsed) {
+  return createSerovalNode(33, id, void 0, void 0, void 0, void 0, void 0, void 0, parsed, void 0, void 0, void 0);
+}
+function createStreamReturnNode(id, parsed) {
+  return createSerovalNode(34, id, void 0, void 0, void 0, void 0, void 0, void 0, parsed, void 0, void 0, void 0);
+}
+function createSequenceNode(id, sequence, throwAt, doneAt) {
+  return createSerovalNode(35, id, throwAt, void 0, void 0, void 0, void 0, sequence, void 0, void 0, void 0, doneAt);
+}
+var OpaqueReference = class {
+  constructor(value, replacement) {
+    this.value = value;
+    this.replacement = replacement;
+  }
+};
+const PROMISE_CONSTRUCTOR = () => {
+  const resolver = {
+    p: 0,
+    s: 0,
+    f: 0
+  };
+  resolver.p = new Promise((resolve, reject) => {
+    resolver.s = resolve;
+    resolver.f = reject;
+  });
+  return resolver;
+};
+const PROMISE_SUCCESS = (resolver, data) => {
+  resolver.s(data);
+  resolver.p.s = 1;
+  resolver.p.v = data;
+};
+const PROMISE_FAILURE = (resolver, data) => {
+  resolver.f(data);
+  resolver.p.s = 2;
+  resolver.p.v = data;
+};
+const SERIALIZED_PROMISE_CONSTRUCTOR = /* @__PURE__ */ PROMISE_CONSTRUCTOR.toString();
+const SERIALIZED_PROMISE_SUCCESS = /* @__PURE__ */ PROMISE_SUCCESS.toString();
+const SERIALIZED_PROMISE_FAILURE = /* @__PURE__ */ PROMISE_FAILURE.toString();
+const STREAM_CONSTRUCTOR = () => {
+  const buffer = [];
+  const listeners = [];
+  let alive = true;
+  let success = false;
+  let count = 0;
+  const internal = {
+    flush(value, mode, x) {
+      for (x = 0; x < count; x++) {
+        const listener = listeners[x];
+        if (listener) listener[mode](value);
+      }
+    },
+    up(listener, x, z, current) {
+      for (x = 0, z = buffer.length; x < z; x++) {
+        current = buffer[x];
+        if (!alive && x === z - 1) listener[success ? "return" : "throw"](current);
+        else listener.next(current);
+      }
+    },
+    on(listener, temp = 0) {
+      let subscribed = alive;
+      if (alive) {
+        for (temp = 0; temp < count; temp++) if (!listeners[temp]) break;
+        if (temp === count) count++;
+        listeners[temp] = listener;
+      }
+      internal.up(listener);
+      return () => {
+        if (alive && subscribed) {
+          subscribed = false;
+          listeners[temp] = void 0;
+          while (count > 0 && !listeners[count - 1]) count--;
+          listeners.length = count;
+        }
+      };
+    }
+  };
+  return {
+    __SEROVAL_STREAM__: true,
+    on(listener) {
+      return internal.on(listener);
+    },
+    next(value) {
+      if (alive) {
+        buffer.push(value);
+        internal.flush(value, "next");
+      }
+    },
+    throw(value) {
+      if (alive) {
+        buffer.push(value);
+        internal.flush(value, "throw");
+        alive = false;
+        success = false;
+        listeners.length = 0;
+      }
+    },
+    return(value) {
+      if (alive) {
+        buffer.push(value);
+        internal.flush(value, "return");
+        alive = false;
+        success = true;
+        listeners.length = 0;
+      }
+    }
+  };
+};
+const SERIALIZED_STREAM_CONSTRUCTOR = /* @__PURE__ */ STREAM_CONSTRUCTOR.toString();
+const ITERATOR_CONSTRUCTOR = (symbol) => (sequence) => () => {
+  let index = 0;
+  const instance = {
+    [symbol]() {
+      return instance;
+    },
+    next() {
+      if (index > sequence.d) return {
+        done: true,
+        value: void 0
+      };
+      const currentIndex = index++;
+      const data = sequence.v[currentIndex];
+      if (currentIndex === sequence.t) throw data;
+      return {
+        done: currentIndex === sequence.d,
+        value: data
+      };
+    }
+  };
+  return instance;
+};
+const SERIALIZED_ITERATOR_CONSTRUCTOR = /* @__PURE__ */ ITERATOR_CONSTRUCTOR.toString();
+const ASYNC_ITERATOR_CONSTRUCTOR = (symbol, createPromise) => (stream) => () => {
+  let count = 0;
+  let doneAt = -1;
+  let isThrow = false;
+  const buffer = [];
+  const pending = [];
+  const internal = { finalize(i = 0, len = pending.length) {
+    for (; i < len; i++) pending[i].s({
+      done: true,
+      value: void 0
+    });
   } };
-  return g;
-}, Et = Tr.toString(), Or = (e) => {
-  let r = atob(e), t = r.length, n2 = new Uint8Array(t);
-  for (let a = 0; a < t; a++) n2[a] = r.charCodeAt(a);
-  return n2.buffer;
-}, It = Or.toString();
-function Ze(e) {
-  return "__SEROVAL_SEQUENCE__" in e;
+  stream.on({
+    next(value) {
+      const temp = pending.shift();
+      if (temp) temp.s({
+        done: false,
+        value
+      });
+      buffer.push(value);
+    },
+    throw(value) {
+      const temp = pending.shift();
+      if (temp) temp.f(value);
+      internal.finalize();
+      doneAt = buffer.length;
+      isThrow = true;
+      buffer.push(value);
+    },
+    return(value) {
+      const temp = pending.shift();
+      if (temp) temp.s({
+        done: true,
+        value
+      });
+      internal.finalize();
+      doneAt = buffer.length;
+      buffer.push(value);
+    }
+  });
+  const instance = {
+    [symbol]() {
+      return instance;
+    },
+    next() {
+      if (doneAt === -1) {
+        const index2 = count++;
+        if (index2 >= buffer.length) {
+          const temp = createPromise();
+          pending.push(temp);
+          return temp.p;
+        }
+        return {
+          done: false,
+          value: buffer[index2]
+        };
+      }
+      if (count > doneAt) return {
+        done: true,
+        value: void 0
+      };
+      const index = count++;
+      const value = buffer[index];
+      if (index !== doneAt) return {
+        done: false,
+        value
+      };
+      if (isThrow) throw value;
+      return {
+        done: true,
+        value
+      };
+    }
+  };
+  return instance;
+};
+const SERIALIZED_ASYNC_ITERATOR_CONSTRUCTOR = /* @__PURE__ */ ASYNC_ITERATOR_CONSTRUCTOR.toString();
+const ARRAY_BUFFER_CONSTRUCTOR = (b64) => {
+  const decoded = atob(b64);
+  const length = decoded.length;
+  const arr = new Uint8Array(length);
+  for (let i = 0; i < length; i++) arr[i] = decoded.charCodeAt(i);
+  return arr.buffer;
+};
+const SERIALIZED_ARRAY_BUFFER_CONSTRUCTOR = /* @__PURE__ */ ARRAY_BUFFER_CONSTRUCTOR.toString();
+var Sequence = class {
+  constructor(values, throwAt, doneAt) {
+    this.v = values;
+    this.t = throwAt;
+    this.d = doneAt;
+  }
+};
+function isSequence(value) {
+  return value instanceof Sequence;
 }
-function wr(e, r, t) {
-  return { __SEROVAL_SEQUENCE__: true, v: e, t: r, d: t };
+function createSequence(values, throwAt, doneAt) {
+  return new Sequence(values, throwAt, doneAt);
 }
-function $e(e) {
-  let r = [], t = -1, n2 = -1, a = e[C]();
-  for (; ; ) try {
-    let s = a.next();
-    if (r.push(s.value), s.done) {
-      n2 = r.length - 1;
+function createSequenceFromIterable(source) {
+  const values = [];
+  let throwsAt = -1;
+  let doneAt = -1;
+  const iterator = source[SYM_ITERATOR]();
+  while (true) try {
+    const value = iterator.next();
+    values.push(value.value);
+    if (value.done) {
+      doneAt = values.length - 1;
       break;
     }
-  } catch (s) {
-    t = r.length, r.push(s);
+  } catch (error) {
+    throwsAt = values.length;
+    doneAt = throwsAt;
+    values.push(error);
+    break;
   }
-  return wr(r, t, n2);
+  return createSequence(values, throwsAt, doneAt);
 }
-var In = xr(C);
-function Rt(e) {
-  return In(e);
+const createIterator = ITERATOR_CONSTRUCTOR(SYM_ITERATOR);
+function sequenceToIterator(sequence) {
+  return createIterator(sequence);
 }
-var Pt = {}, xt = {};
-var Tt = { 0: {}, 1: {}, 2: {}, 3: {}, 4: {}, 5: {} }, Ot = { 0: "[]", 1: Nt, 2: bt, 3: vt, 4: Ct, 5: It };
-function Xe(e) {
-  return "__SEROVAL_STREAM__" in e;
+const ITERATOR = {};
+const ASYNC_ITERATOR = {};
+const SPECIAL_REFS = {
+  [0]: {},
+  [1]: {},
+  [2]: {},
+  [3]: {},
+  [4]: {},
+  [5]: {}
+};
+const SPECIAL_REF_STRING = {
+  [0]: "[]",
+  [1]: SERIALIZED_PROMISE_CONSTRUCTOR,
+  [2]: SERIALIZED_PROMISE_SUCCESS,
+  [3]: SERIALIZED_PROMISE_FAILURE,
+  [4]: SERIALIZED_STREAM_CONSTRUCTOR,
+  [5]: SERIALIZED_ARRAY_BUFFER_CONSTRUCTOR
+};
+function _checkPrivateRedeclaration(e, t) {
+  if (t.has(e)) throw new TypeError("Cannot initialize the same private elements twice on an object");
 }
-function re() {
-  return Pr();
+function _classPrivateMethodInitSpec(e, a) {
+  _checkPrivateRedeclaration(e, a), a.add(e);
 }
-function Qe(e) {
-  let r = re(), t = e[v]();
-  async function n2() {
-    try {
-      let a = await t.next();
-      a.done ? r.return(a.value) : (r.next(a.value), await n2());
-    } catch (a) {
-      r.throw(a);
+function _classPrivateFieldInitSpec(e, t, a) {
+  _checkPrivateRedeclaration(e, t), t.set(e, a);
+}
+function _assertClassBrand(e, t, n) {
+  if ("function" == typeof e ? e === t : e.has(t)) return arguments.length < 3 ? t : n;
+  throw new TypeError("Private element is not present on this object");
+}
+function _classPrivateFieldGet2(s, a) {
+  return s.get(_assertClassBrand(s, a));
+}
+function _classPrivateFieldSet2(s, a, r) {
+  return s.set(_assertClassBrand(s, a), r), r;
+}
+var _buffer = /* @__PURE__ */ new WeakMap();
+var _listeners = /* @__PURE__ */ new WeakMap();
+var _alive = /* @__PURE__ */ new WeakMap();
+var _success = /* @__PURE__ */ new WeakMap();
+var _count = /* @__PURE__ */ new WeakMap();
+var _Stream_brand = /* @__PURE__ */ new WeakSet();
+var Stream = class {
+  constructor() {
+    _classPrivateMethodInitSpec(this, _Stream_brand);
+    _classPrivateFieldInitSpec(this, _buffer, []);
+    _classPrivateFieldInitSpec(this, _listeners, []);
+    _classPrivateFieldInitSpec(this, _alive, true);
+    _classPrivateFieldInitSpec(this, _success, false);
+    _classPrivateFieldInitSpec(this, _count, 0);
+  }
+  on(listener) {
+    let subscribed = _classPrivateFieldGet2(_alive, this);
+    let temp = 0;
+    if (subscribed) {
+      for (; temp < _classPrivateFieldGet2(_count, this); temp++) if (!_classPrivateFieldGet2(_listeners, this)[temp]) break;
+      if (temp === _classPrivateFieldGet2(_count, this)) {
+        var _this$count;
+        _classPrivateFieldSet2(_count, this, (_this$count = _classPrivateFieldGet2(_count, this), _this$count++, _this$count));
+      }
+      _classPrivateFieldGet2(_listeners, this)[temp] = listener;
+    }
+    _assertClassBrand(_Stream_brand, this, _replay).call(this, listener);
+    return () => {
+      if (_classPrivateFieldGet2(_alive, this) && subscribed) {
+        subscribed = false;
+        _classPrivateFieldGet2(_listeners, this)[temp] = void 0;
+        while (_classPrivateFieldGet2(_count, this) > 0 && !_classPrivateFieldGet2(_listeners, this)[_classPrivateFieldGet2(_count, this) - 1]) {
+          var _this$count3;
+          _classPrivateFieldSet2(_count, this, (_this$count3 = _classPrivateFieldGet2(_count, this), _this$count3--, _this$count3));
+        }
+        _classPrivateFieldGet2(_listeners, this).length = _classPrivateFieldGet2(_count, this);
+      }
+    };
+  }
+  next(value) {
+    if (_classPrivateFieldGet2(_alive, this)) {
+      _classPrivateFieldGet2(_buffer, this).push(value);
+      _assertClassBrand(_Stream_brand, this, _flush).call(this, value, "next");
     }
   }
-  return n2().catch(() => {
-  }), r;
-}
-var Rn = Tr(v, ee$1);
-function wt(e) {
-  return Rn(e);
-}
-async function hr(e) {
-  try {
-    return [1, await e];
-  } catch (r) {
-    return [0, r];
+  throw(value) {
+    if (_classPrivateFieldGet2(_alive, this)) {
+      _classPrivateFieldGet2(_buffer, this).push(value);
+      _assertClassBrand(_Stream_brand, this, _flush).call(this, value, "throw");
+      _classPrivateFieldSet2(_alive, this, false);
+      _classPrivateFieldSet2(_success, this, false);
+      _classPrivateFieldGet2(_listeners, this).length = 0;
+    }
   }
-}
-function me(e, r) {
-  return { plugins: r.plugins, mode: e, marked: /* @__PURE__ */ new Set(), features: 63 ^ (r.disabledFeatures || 0), refs: r.refs || /* @__PURE__ */ new Map(), depthLimit: r.depthLimit || 1e3 };
-}
-function pe(e, r) {
-  e.marked.add(r);
-}
-function zr(e, r) {
-  let t = e.refs.size;
-  return e.refs.set(r, t), t;
-}
-function er(e, r) {
-  let t = e.refs.get(r);
-  return t != null ? (pe(e, t), { type: 1, value: pt(t) }) : { type: 0, value: zr(e, r) };
-}
-function Y(e, r) {
-  let t = er(e, r);
-  return t.type === 1 ? t : Ir(r) ? { type: 2, value: gt(t.value, r) } : t;
-}
-function I(e, r) {
-  let t = Y(e, r);
-  if (t.type !== 0) return t.value;
-  if (r in ve) return dt(t.value, r);
-  throw new x$1(r);
-}
-function k(e, r) {
-  let t = er(e, Tt[r]);
-  return t.type === 1 ? t.value : c(26, t.value, r, o, o, o, o, o, o, o, o, o);
-}
-function rr(e) {
-  let r = er(e, Pt);
-  return r.type === 1 ? r.value : c(27, r.value, o, o, o, o, o, o, I(e, C), o, o, o);
-}
-function tr(e) {
-  let r = er(e, xt);
-  return r.type === 1 ? r.value : c(29, r.value, o, o, o, o, o, [k(e, 1), I(e, v)], o, o, o, o);
-}
-function nr(e, r, t, n2) {
-  return c(t ? 11 : 10, e, o, o, o, n2, o, o, o, o, Te(r), o);
-}
-function or(e, r, t, n2) {
-  return c(8, r, o, o, o, o, { k: t, v: n2 }, o, k(e, 0), o, o, o);
-}
-function zt(e, r, t) {
-  return c(22, r, t, o, o, o, o, o, k(e, 1), o, o, o);
-}
-function ar(e, r, t) {
-  let n2 = new Uint8Array(t), a = "";
-  for (let s = 0, i = n2.length; s < i; s++) a += String.fromCharCode(n2[s]);
-  return c(19, r, y(btoa(a)), o, o, o, o, o, k(e, 5), o, o, o);
-}
-function te(e, r) {
-  return { base: me(e, r), child: void 0 };
-}
-var kr = class {
-  constructor(r, t) {
-    this._p = r;
-    this.depth = t;
-  }
-  parse(r) {
-    return N(this._p, this.depth, r);
+  return(value) {
+    if (_classPrivateFieldGet2(_alive, this)) {
+      _classPrivateFieldGet2(_buffer, this).push(value);
+      _assertClassBrand(_Stream_brand, this, _flush).call(this, value, "return");
+      _classPrivateFieldSet2(_alive, this, false);
+      _classPrivateFieldSet2(_success, this, true);
+      _classPrivateFieldGet2(_listeners, this).length = 0;
+    }
   }
 };
-async function xn(e, r, t) {
-  let n2 = [];
-  for (let a = 0, s = t.length; a < s; a++) a in t ? n2[a] = await N(e, r, t[a]) : n2[a] = 0;
-  return n2;
-}
-async function Tn(e, r, t, n2) {
-  return _e(t, n2, await xn(e, r, n2));
-}
-async function Dr(e, r, t) {
-  let n2 = Object.entries(t), a = [], s = [];
-  for (let i = 0, u = n2.length; i < u; i++) a.push(y(n2[i][0])), s.push(await N(e, r, n2[i][1]));
-  return C in t && (a.push(I(e.base, C)), s.push(Ue(rr(e.base), await N(e, r, $e(t))))), v in t && (a.push(I(e.base, v)), s.push(je(tr(e.base), await N(e, r, Qe(t))))), P$1 in t && (a.push(I(e.base, P$1)), s.push($(t[P$1]))), R in t && (a.push(I(e.base, R)), s.push(t[R] ? H : J)), { k: a, v: s };
-}
-async function _r(e, r, t, n2, a) {
-  return nr(t, n2, a, await Dr(e, r, n2));
-}
-async function On(e, r, t, n2) {
-  return ke(t, await N(e, r, n2.valueOf()));
-}
-async function wn(e, r, t, n2) {
-  return De(t, n2, await N(e, r, n2.buffer));
-}
-async function hn(e, r, t, n2) {
-  return Fe(t, n2, await N(e, r, n2.buffer));
-}
-async function zn(e, r, t, n2) {
-  return Be(t, n2, await N(e, r, n2.buffer));
-}
-async function _t(e, r, t, n2) {
-  let a = Z(n2, e.base.features);
-  return Ve(t, n2, a ? await Dr(e, r, a) : o);
-}
-async function _n(e, r, t, n2) {
-  let a = Z(n2, e.base.features);
-  return Me(t, n2, a ? await Dr(e, r, a) : o);
-}
-async function kn(e, r, t, n2) {
-  let a = [], s = [];
-  for (let [i, u] of n2.entries()) a.push(await N(e, r, i)), s.push(await N(e, r, u));
-  return or(e.base, t, a, s);
-}
-async function Dn(e, r, t, n2) {
-  let a = [];
-  for (let s of n2.keys()) a.push(await N(e, r, s));
-  return Le(t, a);
-}
-async function kt(e, r, t, n2) {
-  let a = e.base.plugins;
-  if (a) for (let s = 0, i = a.length; s < i; s++) {
-    let u = a[s];
-    if (u.parse.async && u.test(n2)) return ce(t, u.tag, await u.parse.async(n2, new kr(e, r), { id: t }));
+function _flush(value, mode) {
+  for (let x = 0; x < _classPrivateFieldGet2(_count, this); x++) {
+    var _classPrivateFieldGet2$1;
+    (_classPrivateFieldGet2$1 = _classPrivateFieldGet2(_listeners, this)[x]) === null || _classPrivateFieldGet2$1 === void 0 || _classPrivateFieldGet2$1[mode](value);
   }
-  return o;
 }
-async function Fn(e, r, t, n2) {
-  let [a, s] = await hr(n2);
-  return c(12, t, a, o, o, o, o, o, await N(e, r, s), o, o, o);
+function _replay(listener) {
+  for (let x = 0, z = _classPrivateFieldGet2(_buffer, this).length; x < z; x++) {
+    const current = _classPrivateFieldGet2(_buffer, this)[x];
+    if (!_classPrivateFieldGet2(_alive, this) && x === z - 1) listener[_classPrivateFieldGet2(_success, this) ? "return" : "throw"](current);
+    else listener.next(current);
+  }
 }
-function Bn(e, r, t, n2, a) {
-  let s = [], i = t.on({ next: (u) => {
-    pe(this.base, r), N(this, e, u).then((l) => {
-      s.push(qe(r, l));
-    }, (l) => {
-      a(l), i();
-    });
-  }, throw: (u) => {
-    pe(this.base, r), N(this, e, u).then((l) => {
-      s.push(We(r, l)), n2(s), i();
-    }, (l) => {
-      a(l), i();
-    });
-  }, return: (u) => {
-    pe(this.base, r), N(this, e, u).then((l) => {
-      s.push(Ge(r, l)), n2(s), i();
-    }, (l) => {
-      a(l), i();
-    });
-  } });
+function isStream(value) {
+  return value instanceof Stream;
 }
-async function Vn(e, r, t, n2) {
-  return Ye(t, k(e.base, 4), await new Promise(Bn.bind(e, r, t, n2)));
+function createStream() {
+  return new Stream();
 }
-async function Mn(e, r, t, n2) {
-  let a = [];
-  for (let s = 0, i = n2.v.length; s < i; s++) a[s] = await N(e, r, n2.v[s]);
-  return Ke(t, a, n2.t, n2.d);
+function createStreamFromAsyncIterable(iterable, cleanups) {
+  const stream = createStream();
+  const iterator = iterable[SYM_ASYNC_ITERATOR]();
+  let cancelled = false;
+  let done = false;
+  cleanups === null || cleanups === void 0 || cleanups.push(() => {
+    if (!(done || cancelled)) {
+      cancelled = true;
+      Promise.resolve().then(() => {
+        var _iterator$return;
+        return (_iterator$return = iterator.return) === null || _iterator$return === void 0 ? void 0 : _iterator$return.call(iterator);
+      }).catch(() => {
+      });
+    }
+  });
+  async function push() {
+    try {
+      while (!cancelled) {
+        const value = await iterator.next();
+        if (cancelled) return;
+        if (value.done) {
+          done = true;
+          stream.return(value.value);
+          break;
+        }
+        stream.next(value.value);
+      }
+    } catch (error) {
+      done = true;
+      if (!cancelled) stream.throw(error);
+    }
+  }
+  push().catch(() => {
+  });
+  return stream;
 }
-async function Ln(e, r, t, n2) {
-  if (Array.isArray(n2)) return Tn(e, r, t, n2);
-  if (Xe(n2)) return Vn(e, r, t, n2);
-  if (Ze(n2)) return Mn(e, r, t, n2);
-  let a = n2.constructor;
-  if (a === j) return N(e, r, n2.replacement);
-  let s = await kt(e, r, t, n2);
-  if (s) return s;
-  switch (a) {
+const createAsyncIterable = ASYNC_ITERATOR_CONSTRUCTOR(SYM_ASYNC_ITERATOR, PROMISE_CONSTRUCTOR);
+function streamToAsyncIterable(stream) {
+  return createAsyncIterable(stream);
+}
+async function promiseToResult(current) {
+  try {
+    return [1, await current];
+  } catch (e) {
+    return [0, e];
+  }
+}
+function createBaseParserContext(mode, options) {
+  var _options$compactArray;
+  return {
+    plugins: options.plugins,
+    mode,
+    marked: /* @__PURE__ */ new Set(),
+    features: 127 ^ (options.disabledFeatures || 0),
+    refs: options.refs || /* @__PURE__ */ new Map(),
+    depthLimit: options.depthLimit || 1e3,
+    compactArrayBufferViews: (_options$compactArray = options.compactArrayBufferViews) !== null && _options$compactArray !== void 0 ? _options$compactArray : false
+  };
+}
+function markParserRef(ctx, id) {
+  ctx.marked.add(id);
+}
+function createIndexForValue(ctx, current) {
+  const id = ctx.refs.size;
+  ctx.refs.set(current, id);
+  return id;
+}
+function getNodeForIndexedValue(ctx, current) {
+  const registeredId = ctx.refs.get(current);
+  if (registeredId != null) {
+    markParserRef(ctx, registeredId);
+    return {
+      type: 1,
+      value: createIndexedValueNode(registeredId)
+    };
+  }
+  return {
+    type: 0,
+    value: createIndexForValue(ctx, current)
+  };
+}
+function getReferenceNode(ctx, current) {
+  const indexed = getNodeForIndexedValue(ctx, current);
+  if (indexed.type === 1) return indexed;
+  if (hasReferenceID(current)) return {
+    type: 2,
+    value: createReferenceNode(indexed.value, current)
+  };
+  return indexed;
+}
+function parseWellKnownSymbol(ctx, current) {
+  const ref = getReferenceNode(ctx, current);
+  if (ref.type !== 0) return ref.value;
+  if (current in INV_SYMBOL_REF) return createWKSymbolNode(ref.value, current);
+  throw new SerovalUnsupportedTypeError(current);
+}
+function parseSpecialReference(ctx, ref) {
+  const result = getNodeForIndexedValue(ctx, SPECIAL_REFS[ref]);
+  if (result.type === 1) return result.value;
+  return createSerovalNode(26, result.value, ref, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0, void 0);
+}
+function parseIteratorFactory(ctx) {
+  const result = getNodeForIndexedValue(ctx, ITERATOR);
+  if (result.type === 1) return result.value;
+  return createSerovalNode(27, result.value, void 0, void 0, void 0, void 0, void 0, void 0, parseWellKnownSymbol(ctx, SYM_ITERATOR), void 0, void 0, void 0);
+}
+function parseAsyncIteratorFactory(ctx) {
+  const result = getNodeForIndexedValue(ctx, ASYNC_ITERATOR);
+  if (result.type === 1) return result.value;
+  return createSerovalNode(29, result.value, void 0, void 0, void 0, void 0, void 0, [parseSpecialReference(ctx, 1), parseWellKnownSymbol(ctx, SYM_ASYNC_ITERATOR)], void 0, void 0, void 0, void 0);
+}
+function createObjectNode(id, current, empty, record) {
+  return createSerovalNode(empty ? 11 : 10, id, void 0, void 0, void 0, record, void 0, void 0, void 0, void 0, getObjectFlag(current), void 0);
+}
+function createMapNode(ctx, id, k, v) {
+  return createSerovalNode(8, id, void 0, void 0, void 0, void 0, {
+    k,
+    v
+  }, void 0, parseSpecialReference(ctx, 0), void 0, void 0, void 0);
+}
+function createPromiseConstructorNode(ctx, id, resolver) {
+  return createSerovalNode(22, id, resolver, void 0, void 0, void 0, void 0, void 0, parseSpecialReference(ctx, 1), void 0, void 0, void 0);
+}
+function getArrayBufferView(ctx, current) {
+  if (!ctx.compactArrayBufferViews) return current;
+  const buffer = new Uint8Array(current.buffer, current.byteOffset, current.byteLength).slice().buffer;
+  const Constructor = current.constructor;
+  return new Constructor(buffer);
+}
+function encodeArrayBuffer(current) {
+  if (typeof Buffer !== "undefined") return Buffer.from(current).toString("base64");
+  const bytes = new Uint8Array(current);
+  if (typeof bytes.toBase64 === "function") return bytes.toBase64();
+  let result = "";
+  for (let i = 0, len = bytes.length; i < len; i++) result += String.fromCharCode(bytes[i]);
+  return btoa(result);
+}
+function createArrayBufferNode(ctx, id, current) {
+  return createSerovalNode(19, id, encodeArrayBuffer(current), void 0, void 0, void 0, void 0, void 0, parseSpecialReference(ctx, 5), void 0, void 0, void 0);
+}
+function createAsyncParserContext(mode, options) {
+  return {
+    base: createBaseParserContext(mode, options),
+    child: void 0
+  };
+}
+var AsyncParsePluginContext = class {
+  constructor(_p, depth) {
+    this._p = _p;
+    this.depth = depth;
+  }
+  parse(current) {
+    return parseAsync(this._p, this.depth, current);
+  }
+};
+async function parseItems$1(ctx, depth, current) {
+  const nodes = [];
+  for (let i = 0, len = current.length; i < len; i++) if (i in current) nodes[i] = await parseAsync(ctx, depth, current[i]);
+  else nodes[i] = 0;
+  return nodes;
+}
+async function parseArray$1(ctx, depth, id, current) {
+  return createArrayNode(id, current, await parseItems$1(ctx, depth, current));
+}
+async function parseProperties$1(ctx, depth, properties) {
+  const entries = Object.entries(properties);
+  const keyNodes = [];
+  const valueNodes = [];
+  for (let i = 0, len = entries.length; i < len; i++) {
+    keyNodes.push(serializeString(entries[i][0]));
+    valueNodes.push(await parseAsync(ctx, depth, entries[i][1]));
+  }
+  if (SYM_ITERATOR in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_ITERATOR));
+    valueNodes.push(createIteratorFactoryInstanceNode(parseIteratorFactory(ctx.base), await parseAsync(ctx, depth, createSequenceFromIterable(properties))));
+  }
+  if (SYM_ASYNC_ITERATOR in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_ASYNC_ITERATOR));
+    valueNodes.push(createAsyncIteratorFactoryInstanceNode(parseAsyncIteratorFactory(ctx.base), await parseAsync(ctx, depth, createStreamFromAsyncIterable(properties))));
+  }
+  if (SYM_TO_STRING_TAG in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_TO_STRING_TAG));
+    valueNodes.push(createStringNode(properties[SYM_TO_STRING_TAG]));
+  }
+  if (SYM_IS_CONCAT_SPREADABLE in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_IS_CONCAT_SPREADABLE));
+    valueNodes.push(properties[SYM_IS_CONCAT_SPREADABLE] ? TRUE_NODE : FALSE_NODE);
+  }
+  return {
+    k: keyNodes,
+    v: valueNodes
+  };
+}
+async function parsePlainObject$1(ctx, depth, id, current, empty) {
+  return createObjectNode(id, current, empty, await parseProperties$1(ctx, depth, current));
+}
+async function parseBoxed$1(ctx, depth, id, current) {
+  return createBoxedNode(id, await parseAsync(ctx, depth, current.valueOf()));
+}
+async function parseTypedArray$1(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createTypedArrayNode(id, current, await parseAsync(ctx, depth, current.buffer));
+}
+async function parseBigIntTypedArray$1(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createBigIntTypedArrayNode(id, current, await parseAsync(ctx, depth, current.buffer));
+}
+async function parseDataView$1(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createDataViewNode(id, current, await parseAsync(ctx, depth, current.buffer));
+}
+async function parseError$1(ctx, depth, id, current) {
+  const options = getErrorOptions(current, ctx.base.features);
+  return createErrorNode(id, current, options ? await parseProperties$1(ctx, depth, options) : void 0);
+}
+async function parseAggregateError$1(ctx, depth, id, current) {
+  const options = getErrorOptions(current, ctx.base.features);
+  return createAggregateErrorNode(id, current, options ? await parseProperties$1(ctx, depth, options) : void 0);
+}
+async function parseMap$1(ctx, depth, id, current) {
+  const keyNodes = [];
+  const valueNodes = [];
+  for (const [key, value] of current.entries()) {
+    keyNodes.push(await parseAsync(ctx, depth, key));
+    valueNodes.push(await parseAsync(ctx, depth, value));
+  }
+  return createMapNode(ctx.base, id, keyNodes, valueNodes);
+}
+async function parseSet$1(ctx, depth, id, current) {
+  const items = [];
+  for (const item of current.keys()) items.push(await parseAsync(ctx, depth, item));
+  return createSetNode(id, items);
+}
+async function parsePlugin$1(ctx, depth, id, current) {
+  const currentPlugins = ctx.base.plugins;
+  if (currentPlugins) for (let i = 0, len = currentPlugins.length; i < len; i++) {
+    const plugin = currentPlugins[i];
+    if (plugin.parse.async && plugin.test(current)) return createPluginNode(id, plugin.tag, await plugin.parse.async(current, new AsyncParsePluginContext(ctx, depth), { id }));
+  }
+}
+async function parsePromise$1(ctx, depth, id, current) {
+  const [status, result] = await promiseToResult(current);
+  return createSerovalNode(12, id, status, void 0, void 0, void 0, void 0, void 0, await parseAsync(ctx, depth, result), void 0, void 0, void 0);
+}
+function parseStreamHandle(depth, id, current, resolve, reject) {
+  const sequence = [];
+  const cleanup = current.on({
+    next: (value) => {
+      markParserRef(this.base, id);
+      parseAsync(this, depth, value).then((data) => {
+        sequence.push(createStreamNextNode(id, data));
+      }, (data) => {
+        reject(data);
+        cleanup();
+      });
+    },
+    throw: (value) => {
+      markParserRef(this.base, id);
+      parseAsync(this, depth, value).then((data) => {
+        sequence.push(createStreamThrowNode(id, data));
+        resolve(sequence);
+        cleanup();
+      }, (data) => {
+        reject(data);
+        cleanup();
+      });
+    },
+    return: (value) => {
+      markParserRef(this.base, id);
+      parseAsync(this, depth, value).then((data) => {
+        sequence.push(createStreamReturnNode(id, data));
+        resolve(sequence);
+        cleanup();
+      }, (data) => {
+        reject(data);
+        cleanup();
+      });
+    }
+  });
+}
+async function parseStream$1(ctx, depth, id, current) {
+  return createStreamConstructorNode(id, parseSpecialReference(ctx.base, 4), await new Promise(parseStreamHandle.bind(ctx, depth, id, current)));
+}
+async function parseSequence$1(ctx, depth, id, current) {
+  const nodes = [];
+  for (let i = 0, len = current.v.length; i < len; i++) nodes[i] = await parseAsync(ctx, depth, current.v[i]);
+  return createSequenceNode(id, nodes, current.t, current.d);
+}
+async function parseObjectAsync(ctx, depth, id, current) {
+  if (Array.isArray(current)) return parseArray$1(ctx, depth, id, current);
+  if (isStream(current)) return parseStream$1(ctx, depth, id, current);
+  if (isSequence(current)) return parseSequence$1(ctx, depth, id, current);
+  let currentClass = current.constructor;
+  if (currentClass !== void 0 && typeof currentClass !== "function") {
+    const proto = Object.getPrototypeOf(current);
+    currentClass = proto === null ? void 0 : proto.constructor;
+  }
+  if (currentClass === OpaqueReference) return parseAsync(ctx, depth, current.replacement);
+  const parsed = await parsePlugin$1(ctx, depth, id, current);
+  if (parsed) return parsed;
+  switch (currentClass) {
     case Object:
-      return _r(e, r, t, n2, false);
-    case o:
-      return _r(e, r, t, n2, true);
+      return parsePlainObject$1(ctx, depth, id, current, false);
+    case void 0:
+      return parsePlainObject$1(ctx, depth, id, current, true);
     case Date:
-      return he(t, n2);
+      return createDateNode(id, current);
     case Error:
     case EvalError:
     case RangeError:
@@ -1515,14 +2009,14 @@ async function Ln(e, r, t, n2) {
     case SyntaxError:
     case TypeError:
     case URIError:
-      return _t(e, r, t, n2);
+      return parseError$1(ctx, depth, id, current);
     case Number:
     case Boolean:
     case String:
     case BigInt:
-      return On(e, r, t, n2);
+      return parseBoxed$1(ctx, depth, id, current);
     case ArrayBuffer:
-      return ar(e.base, t, n2);
+      return createArrayBufferNode(ctx.base, id, current);
     case Int8Array:
     case Int16Array:
     case Int32Array:
@@ -1532,86 +2026,107 @@ async function Ln(e, r, t, n2) {
     case Uint8ClampedArray:
     case Float32Array:
     case Float64Array:
-      return wn(e, r, t, n2);
+      return parseTypedArray$1(ctx, depth, id, current);
     case DataView:
-      return zn(e, r, t, n2);
+      return parseDataView$1(ctx, depth, id, current);
     case Map:
-      return kn(e, r, t, n2);
+      return parseMap$1(ctx, depth, id, current);
     case Set:
-      return Dn(e, r, t, n2);
+      return parseSet$1(ctx, depth, id, current);
   }
-  if (a === Promise || n2 instanceof Promise) return Fn(e, r, t, n2);
-  let i = e.base.features;
-  if (i & 32 && a === RegExp) return ze(t, n2);
-  if (i & 16) switch (a) {
+  if (currentClass === Promise || current instanceof Promise) return parsePromise$1(ctx, depth, id, current);
+  const currentFeatures = ctx.base.features;
+  if (currentFeatures & 32 && currentClass === RegExp) return createRegExpNode(id, current);
+  if (currentFeatures & 16) switch (currentClass) {
     case BigInt64Array:
     case BigUint64Array:
-      return hn(e, r, t, n2);
+      return parseBigIntTypedArray$1(ctx, depth, id, current);
   }
-  if (i & 1 && typeof AggregateError != "undefined" && (a === AggregateError || n2 instanceof AggregateError)) return _n(e, r, t, n2);
-  if (n2 instanceof Error) return _t(e, r, t, n2);
-  if (C in n2 || v in n2) return _r(e, r, t, n2, !!a);
-  throw new x$1(n2);
+  if (currentFeatures & 1 && typeof AggregateError !== "undefined" && (currentClass === AggregateError || current instanceof AggregateError)) return parseAggregateError$1(ctx, depth, id, current);
+  if (currentFeatures & 64 && typeof Temporal !== "undefined") switch (currentClass) {
+    case Temporal.Instant:
+      return createTemporalNode(id, 0, current);
+    case Temporal.Duration:
+      return createTemporalNode(id, 1, current);
+    case Temporal.PlainDate:
+      return createTemporalNode(id, 2, current);
+    case Temporal.PlainDateTime:
+      return createTemporalNode(id, 3, current);
+    case Temporal.PlainMonthDay:
+      return createTemporalNode(id, 4, current);
+    case Temporal.PlainTime:
+      return createTemporalNode(id, 5, current);
+    case Temporal.PlainYearMonth:
+      return createTemporalNode(id, 6, current);
+    case Temporal.ZonedDateTime:
+      return createTemporalNode(id, 7, current);
+  }
+  if (current instanceof Error) return parseError$1(ctx, depth, id, current);
+  if (SYM_ITERATOR in current || SYM_ASYNC_ITERATOR in current) return parsePlainObject$1(ctx, depth, id, current, !!currentClass);
+  throw new SerovalUnsupportedTypeError(current);
 }
-async function Un(e, r, t) {
-  let n2 = Y(e.base, t);
-  if (n2.type !== 0) return n2.value;
-  let a = await kt(e, r, n2.value, t);
-  if (a) return a;
-  throw new x$1(t);
+async function parseFunctionAsync(ctx, depth, current) {
+  const ref = getReferenceNode(ctx.base, current);
+  if (ref.type !== 0) return ref.value;
+  const plugin = await parsePlugin$1(ctx, depth, ref.value, current);
+  if (plugin) return plugin;
+  throw new SerovalUnsupportedTypeError(current);
 }
-async function N(e, r, t) {
-  switch (typeof t) {
+async function parseAsync(ctx, depth, current) {
+  if (depth >= ctx.base.depthLimit) throw new SerovalDepthLimitError(ctx.base.depthLimit);
+  switch (typeof current) {
     case "boolean":
-      return t ? H : J;
+      return current ? TRUE_NODE : FALSE_NODE;
     case "undefined":
-      return Ae;
+      return UNDEFINED_NODE;
     case "string":
-      return $(t);
+      return createStringNode(current);
     case "number":
-      return Oe(t);
+      return createNumberNode(current);
     case "bigint":
-      return we(t);
-    case "object": {
-      if (t) {
-        let n2 = Y(e.base, t);
-        return n2.type === 0 ? await Ln(e, r + 1, n2.value, t) : n2.value;
+      return createBigIntNode(current);
+    case "object":
+      if (current) {
+        const ref = getReferenceNode(ctx.base, current);
+        return ref.type === 0 ? await parseObjectAsync(ctx, depth + 1, ref.value, current) : ref.value;
       }
-      return Ee;
-    }
+      return NULL_NODE;
     case "symbol":
-      return I(e.base, t);
+      return parseWellKnownSymbol(ctx.base, current);
     case "function":
-      return Un(e, r, t);
+      return parseFunctionAsync(ctx, depth, current);
     default:
-      throw new x$1(t);
+      throw new SerovalUnsupportedTypeError(current);
   }
 }
-async function ne(e, r) {
+async function parseTopAsync(ctx, current) {
   try {
-    return await N(e, 0, r);
-  } catch (t) {
-    throw t instanceof z ? t : new z(t);
+    return await parseAsync(ctx, 0, current);
+  } catch (error) {
+    throw error instanceof SerovalParserError ? error : new SerovalParserError(error);
   }
 }
-var oe = ((t) => (t[t.Vanilla = 1] = "Vanilla", t[t.Cross = 2] = "Cross", t))(oe || {});
-function ai(e) {
-  return e;
+function createPlugin(plugin) {
+  return plugin;
 }
-function Dt(e, r) {
-  for (let t = 0, n2 = r.length; t < n2; t++) {
-    let a = r[t];
-    e.has(a) || (e.add(a), a.extends && Dt(e, a.extends));
+function dedupePlugins(deduped, plugins) {
+  for (let i = 0, len = plugins.length; i < len; i++) {
+    const current = plugins[i];
+    if (!deduped.has(current)) {
+      deduped.add(current);
+      if (current.extends) dedupePlugins(deduped, current.extends);
+    }
   }
 }
-function A(e) {
-  if (e) {
-    let r = /* @__PURE__ */ new Set();
-    return Dt(r, e), [...r];
+function resolvePlugins(plugins) {
+  if (plugins) {
+    const deduped = /* @__PURE__ */ new Set();
+    dedupePlugins(deduped, plugins);
+    return [...deduped];
   }
 }
-function Ft(e) {
-  switch (e) {
+function getTypedArrayConstructor(name) {
+  switch (name) {
     case "Int8Array":
       return Int8Array;
     case "Int16Array":
@@ -1635,67 +2150,11 @@ function Ft(e) {
     case "BigUint64Array":
       return BigUint64Array;
     default:
-      throw new Je(e);
+      throw new SerovalUnknownTypedArrayError(name);
   }
 }
-var jn = 1e6, Yn = 1e4, qn = 2e4;
-function Vt(e, r) {
-  switch (r) {
-    case 3:
-      return Object.freeze(e);
-    case 1:
-      return Object.preventExtensions(e);
-    case 2:
-      return Object.seal(e);
-    default:
-      return e;
-  }
-}
-var Wn = 1e3;
-function Mt(e, r) {
-  var n2;
-  let t = r.refs || /* @__PURE__ */ new Map();
-  return "types" in t || Object.assign(t, { types: /* @__PURE__ */ new Map() }), { mode: e, plugins: r.plugins, refs: t, features: (n2 = r.features) != null ? n2 : 63 ^ (r.disabledFeatures || 0), depthLimit: r.depthLimit || Wn };
-}
-function Lt(e) {
-  return { mode: 1, base: Mt(1, e), child: o, state: { marked: new Set(e.markedRefs) } };
-}
-var Fr = class {
-  constructor(r, t) {
-    this._p = r;
-    this.depth = t;
-  }
-  deserialize(r) {
-    return p$1(this._p, this.depth, r);
-  }
-};
-function jt(e, r) {
-  if (r < 0 || !Number.isFinite(r) || !Number.isInteger(r)) throw new O({ t: 4, i: r });
-  if (e.refs.has(r)) throw new Error("Conflicted ref id: " + r);
-}
-function Gn(e, r, t) {
-  return jt(e.base, r), e.state.marked.has(r) && e.base.refs.set(r, t), t;
-}
-function Kn(e, r, t) {
-  return jt(e.base, r), e.base.refs.set(r, t), t;
-}
-function b(e, r, t) {
-  return e.mode === 1 ? Gn(e, r, t) : Kn(e, r, t);
-}
-function Br(e, r, t) {
-  if (Object.hasOwn(r, t)) return r[t];
-  throw new O(e);
-}
-function Hn(e, r) {
-  return b(e, r.i, St(D(r.s)));
-}
-function Jn(e, r, t) {
-  let n2 = t.a, a = n2.length, s = b(e, t.i, new Array(a));
-  for (let i = 0, u; i < a; i++) u = n2[i], u && (s[i] = p$1(e, r, u));
-  return Vt(s, t.o), s;
-}
-function Zn(e) {
-  switch (e) {
+function isValidKey(key) {
+  switch (key) {
     case "constructor":
     case "__proto__":
     case "prototype":
@@ -1708,878 +2167,1387 @@ function Zn(e) {
       return true;
   }
 }
-function $n(e) {
-  switch (e) {
-    case v:
-    case R:
-    case P$1:
-    case C:
+function isValidSymbol(symbol) {
+  switch (symbol) {
+    case SYM_ASYNC_ITERATOR:
+    case SYM_IS_CONCAT_SPREADABLE:
+    case SYM_TO_STRING_TAG:
+    case SYM_ITERATOR:
       return true;
     default:
       return false;
   }
 }
-function Bt(e, r, t) {
-  Zn(r) ? e[r] = t : Object.defineProperty(e, r, { value: t, configurable: true, enumerable: true, writable: true });
-}
-function Xn(e, r, t, n2, a) {
-  if (typeof n2 == "string") Bt(t, D(n2), p$1(e, r, a));
-  else {
-    let s = p$1(e, r, n2);
-    switch (typeof s) {
-      case "string":
-        Bt(t, s, p$1(e, r, a));
-        break;
-      case "symbol":
-        $n(s) && (t[s] = p$1(e, r, a));
-        break;
-      default:
-        throw new O(n2);
-    }
-  }
-}
-function Yt(e, r, t) {
-  e.base.refs.types.set(r, t);
-}
-function de(e, r, t, n2) {
-  if (e.base.refs.types.get(t) !== n2) throw new O(r);
-}
-function qt(e, r, t, n2) {
-  let a = t.k;
-  if (a.length > 0) for (let i = 0, u = t.v, l = a.length; i < l; i++) Xn(e, r, n2, a[i], u[i]);
-  return n2;
-}
-function Qn(e, r, t) {
-  let n2 = b(e, t.i, t.t === 10 ? {} : /* @__PURE__ */ Object.create(null));
-  return qt(e, r, t.p, n2), Vt(n2, t.o), n2;
-}
-function eo(e, r) {
-  return b(e, r.i, new Date(r.s));
-}
-function ro(e, r) {
-  if (e.base.features & 32) {
-    let t = D(r.c);
-    if (t.length > qn) throw new O(r);
-    return b(e, r.i, new RegExp(t, r.m));
-  }
-  throw new h(r);
-}
-function to(e, r, t) {
-  let n2 = b(e, t.i, /* @__PURE__ */ new Set());
-  for (let a = 0, s = t.a, i = s.length; a < i; a++) n2.add(p$1(e, r, s[a]));
-  return n2;
-}
-function no(e, r, t) {
-  let n2 = b(e, t.i, /* @__PURE__ */ new Map());
-  for (let a = 0, s = t.e.k, i = t.e.v, u = s.length; a < u; a++) n2.set(p$1(e, r, s[a]), p$1(e, r, i[a]));
-  return n2;
-}
-function oo(e, r) {
-  if (r.s.length > jn) throw new O(r);
-  return b(e, r.i, Or(D(r.s)));
-}
-function ao(e, r, t) {
-  var u;
-  let n2 = Ft(t.c), a = p$1(e, r, t.f), s = (u = t.b) != null ? u : 0;
-  if (s < 0 || s > a.byteLength) throw new O(t);
-  return b(e, t.i, new n2(a, s, t.l));
-}
-function so(e, r, t) {
-  var i;
-  let n2 = p$1(e, r, t.f), a = (i = t.b) != null ? i : 0;
-  if (a < 0 || a > n2.byteLength) throw new O(t);
-  return b(e, t.i, new DataView(n2, a, t.l));
-}
-function Wt(e, r, t, n2) {
-  if (t.p) {
-    let a = qt(e, r, t.p, {});
-    Object.defineProperties(n2, Object.getOwnPropertyDescriptors(a));
-  }
-  return n2;
-}
-function io(e, r, t) {
-  let n2 = b(e, t.i, new AggregateError([], D(t.m)));
-  return Wt(e, r, t, n2);
-}
-function uo(e, r, t) {
-  let n2 = Br(t, st, t.s), a = b(e, t.i, new n2(D(t.m)));
-  return Wt(e, r, t, a);
-}
-function lo(e, r, t) {
-  let n2 = ee$1(), a = b(e, t.i, n2.p), s = p$1(e, r, t.f);
-  return t.s ? n2.s(s) : n2.f(s), a;
-}
-function co(e, r, t) {
-  return b(e, t.i, Object(p$1(e, r, t.f)));
-}
-function fo(e, r, t) {
-  let n2 = e.base.plugins;
-  if (n2) {
-    let a = D(t.c);
-    for (let s = 0, i = n2.length; s < i; s++) {
-      let u = n2[s];
-      if (u.tag === a) return b(e, t.i, u.deserialize(t.s, new Fr(e, r), { id: t.i }));
-    }
-  }
-  throw new X(t.c);
-}
-function So(e, r) {
-  let t = b(e, r.i, b(e, r.s, ee$1()).p);
-  return Yt(e, r.s, 22), t;
-}
-function mo(e, r, t) {
-  let n2 = e.base.refs.get(t.i);
-  if (n2) return de(e, t, t.i, 22), n2.s(p$1(e, r, t.a[1])), o;
-  throw new V("Promise");
-}
-function po(e, r, t) {
-  let n2 = e.base.refs.get(t.i);
-  if (n2) return de(e, t, t.i, 22), n2.f(p$1(e, r, t.a[1])), o;
-  throw new V("Promise");
-}
-function go(e, r, t) {
-  p$1(e, r, t.a[0]);
-  let n2 = p$1(e, r, t.a[1]);
-  return Rt(n2);
-}
-function yo(e, r, t) {
-  p$1(e, r, t.a[0]);
-  let n2 = p$1(e, r, t.a[1]);
-  return wt(n2);
-}
-function No(e, r, t) {
-  let n2 = b(e, t.i, re());
-  Yt(e, t.i, 31);
-  let a = t.a, s = a.length;
-  if (s) for (let i = 0; i < s; i++) p$1(e, r, a[i]);
-  return n2;
-}
-function bo(e, r, t) {
-  let n2 = e.base.refs.get(t.i);
-  if (n2) return de(e, t, t.i, 31), n2.next(p$1(e, r, t.f)), o;
-  throw new V("Stream");
-}
-function vo(e, r, t) {
-  let n2 = e.base.refs.get(t.i);
-  if (n2) return de(e, t, t.i, 31), n2.throw(p$1(e, r, t.f)), o;
-  throw new V("Stream");
-}
-function Co(e, r, t) {
-  let n2 = e.base.refs.get(t.i);
-  if (n2) return de(e, t, t.i, 31), n2.return(p$1(e, r, t.f)), o;
-  throw new V("Stream");
-}
-function Ao(e, r, t) {
-  return p$1(e, r, t.f), o;
-}
-function Eo(e, r, t) {
-  return p$1(e, r, t.a[1]), o;
-}
-function Io(e, r, t) {
-  let n2 = b(e, t.i, wr([], t.s, t.l));
-  for (let a = 0, s = t.a.length; a < s; a++) n2.v[a] = p$1(e, r, t.a[a]);
-  return n2;
-}
-function p$1(e, r, t) {
-  if (r > e.base.depthLimit) throw new Q(e.base.depthLimit);
-  switch (r += 1, t.t) {
-    case 2:
-      return Br(t, at, t.s);
-    case 0:
-      return Number(t.s);
-    case 1:
-      return D(String(t.s));
+const DEFAULT_MAX_BASE64_LENGTH = 1e6;
+const MIN_NATIVE_BASE64_LENGTH = 512;
+const MAX_BIGINT_LENGTH = 1e4;
+const MAX_REGEXP_SOURCE_LENGTH = 2e4;
+function applyObjectFlag(obj, flag) {
+  switch (flag) {
     case 3:
-      if (String(t.s).length > Yn) throw new O(t);
-      return BigInt(t.s);
-    case 4:
-      return e.base.refs.get(t.i);
-    case 18:
-      return Hn(e, t);
-    case 9:
-      return Jn(e, r, t);
-    case 10:
-    case 11:
-      return Qn(e, r, t);
-    case 5:
-      return eo(e, t);
-    case 6:
-      return ro(e, t);
-    case 7:
-      return to(e, r, t);
-    case 8:
-      return no(e, r, t);
-    case 19:
-      return oo(e, t);
-    case 16:
-    case 15:
-      return ao(e, r, t);
-    case 20:
-      return so(e, r, t);
-    case 14:
-      return io(e, r, t);
-    case 13:
-      return uo(e, r, t);
-    case 12:
-      return lo(e, r, t);
-    case 17:
-      return Br(t, nt, t.s);
-    case 21:
-      return co(e, r, t);
-    case 25:
-      return fo(e, r, t);
-    case 22:
-      return So(e, t);
-    case 23:
-      return mo(e, r, t);
-    case 24:
-      return po(e, r, t);
-    case 28:
-      return go(e, r, t);
-    case 30:
-      return yo(e, r, t);
-    case 31:
-      return No(e, r, t);
-    case 32:
-      return bo(e, r, t);
-    case 33:
-      return vo(e, r, t);
-    case 34:
-      return Co(e, r, t);
-    case 27:
-      return Ao(e, r, t);
-    case 29:
-      return Eo(e, r, t);
-    case 35:
-      return Io(e, r, t);
+      return Object.freeze(obj);
+    case 1:
+      return Object.preventExtensions(obj);
+    case 2:
+      return Object.seal(obj);
     default:
-      throw new h(t);
+      return obj;
   }
 }
-function sr(e, r) {
-  try {
-    return p$1(e, 0, r);
-  } catch (t) {
-    throw new He(t);
+const DEFAULT_DEPTH_LIMIT = 1e3;
+function createBaseDeserializerContext(mode, options) {
+  var _options$maxBase64Len, _options$features;
+  const maxBase64Length = (_options$maxBase64Len = options.maxBase64Length) !== null && _options$maxBase64Len !== void 0 ? _options$maxBase64Len : DEFAULT_MAX_BASE64_LENGTH;
+  if (!Number.isSafeInteger(maxBase64Length) || maxBase64Length < 0) throw new RangeError("maxBase64Length must be a non-negative safe integer");
+  const refs = options.refs || /* @__PURE__ */ new Map();
+  if (!("types" in refs)) Object.assign(refs, { types: /* @__PURE__ */ new Map() });
+  return {
+    mode,
+    plugins: options.plugins,
+    refs,
+    features: (_options$features = options.features) !== null && _options$features !== void 0 ? _options$features : 127 ^ (options.disabledFeatures || 0),
+    depthLimit: options.depthLimit || DEFAULT_DEPTH_LIMIT,
+    maxBase64Length
+  };
+}
+function createVanillaDeserializerContext(options) {
+  return {
+    mode: 1,
+    base: createBaseDeserializerContext(1, options),
+    child: void 0,
+    state: { marked: new Set(options.markedRefs) }
+  };
+}
+var DeserializePluginContext = class {
+  constructor(_p, depth) {
+    this._p = _p;
+    this.depth = depth;
   }
-}
-var Ro = () => T, Po = Ro.toString(), Gt = /=>/.test(Po);
-function ir(e, r) {
-  return Gt ? (e.length === 1 ? e[0] : "(" + e.join(",") + ")") + "=>" + (r.startsWith("{") ? "(" + r + ")" : r) : "function(" + e.join(",") + "){return " + r + "}";
-}
-function Kt(e, r) {
-  return Gt ? (e.length === 1 ? e[0] : "(" + e.join(",") + ")") + "=>{" + r + "}" : "function(" + e.join(",") + "){" + r + "}";
-}
-var Zt = "hjkmoquxzABCDEFGHIJKLNPQRTUVWXYZ$_", Ht = Zt.length, $t = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$_", Jt = $t.length;
-function Vr(e) {
-  let r = e % Ht, t = Zt[r];
-  for (e = (e - r) / Ht; e > 0; ) r = e % Jt, t += $t[r], e = (e - r) / Jt;
-  return t;
-}
-var xo = /^[$A-Z_][0-9A-Z_$]*$/i;
-function Mr(e) {
-  let r = e[0];
-  return (r === "$" || r === "_" || r >= "A" && r <= "Z" || r >= "a" && r <= "z") && xo.test(e);
-}
-function ye(e) {
-  switch (e.t) {
-    case 0:
-      return e.s + "=" + e.v;
-    case 2:
-      return e.s + ".set(" + e.k + "," + e.v + ")";
-    case 1:
-      return e.s + ".add(" + e.v + ")";
-    case 3:
-      return e.s + ".delete(" + e.k + ")";
-  }
-}
-function To(e) {
-  let r = [], t = e[0];
-  for (let n2 = 1, a = e.length, s, i = t; n2 < a; n2++) s = e[n2], s.t === 0 && s.v === i.v ? t = { t: 0, s: s.s, k: o, v: ye(t) } : s.t === 2 && s.s === i.s ? t = { t: 2, s: ye(t), k: s.k, v: s.v } : s.t === 1 && s.s === i.s ? t = { t: 1, s: ye(t), k: o, v: s.v } : s.t === 3 && s.s === i.s ? t = { t: 3, s: ye(t), k: s.k, v: o } : (r.push(t), t = s), i = s;
-  return r.push(t), r;
-}
-function on(e) {
-  if (e.length) {
-    let r = "", t = To(e);
-    for (let n2 = 0, a = t.length; n2 < a; n2++) r += ye(t[n2]) + ",";
-    return r;
-  }
-  return o;
-}
-var Oo = "Object.create(null)", wo = "new Set", ho = "new Map", zo = "Promise.resolve", _o = "Promise.reject", ko = { 3: "Object.freeze", 2: "Object.seal", 1: "Object.preventExtensions", 0: o };
-function an(e, r) {
-  return { mode: e, plugins: r.plugins, features: r.features, marked: new Set(r.markedRefs), stack: [], flags: [], assignments: [] };
-}
-function lr(e) {
-  return { mode: 2, base: an(2, e), state: e, child: o };
-}
-var Lr = class {
-  constructor(r) {
-    this._p = r;
-  }
-  serialize(r) {
-    return f(this._p, r);
+  deserialize(node) {
+    return deserialize$1(this._p, this.depth, node);
   }
 };
-function Fo(e, r) {
-  let t = e.valid.get(r);
-  t == null && (t = e.valid.size, e.valid.set(r, t));
-  let n2 = e.vars[t];
-  return n2 == null && (n2 = Vr(t), e.vars[t] = n2), n2;
+function guardIndexedValue(ctx, id) {
+  if (id < 0 || !Number.isFinite(id) || !Number.isInteger(id)) throw new SerovalMalformedNodeError({
+    t: 4,
+    i: id
+  });
+  if (ctx.refs.has(id)) throw new Error("Conflicted ref id: " + id);
 }
-function Bo(e) {
-  return le + "[" + e + "]";
+function isThennable(value) {
+  return !!value && (typeof value === "object" || typeof value === "function") && "then" in value && typeof value.then === "function";
 }
-function m(e, r) {
-  return e.mode === 1 ? Fo(e.state, r) : Bo(r);
+function assignIndexedValueVanilla(ctx, id, value) {
+  guardIndexedValue(ctx.base, id);
+  if (ctx.state.marked.has(id)) ctx.base.refs.set(id, value);
+  return value;
 }
-function w$1(e, r) {
-  e.marked.add(r);
+function assignIndexedValueCross(ctx, id, value) {
+  guardIndexedValue(ctx.base, id);
+  ctx.base.refs.set(id, value);
+  return value;
 }
-function Ur(e, r) {
-  return e.marked.has(r);
+function assignIndexedValue$1(ctx, id, value) {
+  return ctx.mode === 1 ? assignIndexedValueVanilla(ctx, id, value) : assignIndexedValueCross(ctx, id, value);
 }
-function Yr(e, r, t) {
-  r !== 0 && (w$1(e.base, t), e.base.flags.push({ type: r, value: m(e, t) }));
+function deserializeKnownValue(node, record, key) {
+  if (Object.hasOwn(record, key)) return record[key];
+  throw new SerovalMalformedNodeError(node);
 }
-function Vo(e) {
-  let r = "";
-  for (let t = 0, n2 = e.flags, a = n2.length; t < a; t++) {
-    let s = n2[t];
-    r += ko[s.type] + "(" + s.value + "),";
+function deserializeReference(ctx, node) {
+  return assignIndexedValue$1(ctx, node.i, getReference(deserializeString(node.s)));
+}
+function validateNodeList(node, list) {
+  if (!Array.isArray(list)) throw new SerovalMalformedNodeError(node);
+}
+function deserializeArray(ctx, depth, node) {
+  const items = node.a;
+  validateNodeList(node, items);
+  const len = items.length;
+  const result = assignIndexedValue$1(ctx, node.i, new Array(len));
+  for (let i = 0, item; i < len; i++) {
+    item = items[i];
+    if (item) result[i] = deserialize$1(ctx, depth, item);
   }
-  return r;
+  applyObjectFlag(result, node.o);
+  return result;
 }
-function sn(e) {
-  let r = on(e.assignments), t = Vo(e);
-  return r ? t ? r + t : r : t;
+function assignStringProperty(object, key, value) {
+  if (isValidKey(key)) object[key] = value;
+  else Object.defineProperty(object, key, {
+    value,
+    configurable: true,
+    enumerable: true,
+    writable: true
+  });
 }
-function qr(e, r, t) {
-  e.assignments.push({ t: 0, s: r, k: o, v: t });
+function assignProperty(ctx, depth, object, key, value) {
+  if (typeof key === "string") assignStringProperty(object, deserializeString(key), deserialize$1(ctx, depth, value));
+  else {
+    const actual = deserialize$1(ctx, depth, key);
+    switch (typeof actual) {
+      case "string":
+        assignStringProperty(object, actual, deserialize$1(ctx, depth, value));
+        break;
+      case "symbol":
+        if (isValidSymbol(actual)) object[actual] = deserialize$1(ctx, depth, value);
+        break;
+      default:
+        throw new SerovalMalformedNodeError(key);
+    }
+  }
 }
-function Mo(e, r, t) {
-  e.base.assignments.push({ t: 1, s: m(e, r), k: o, v: t });
+function assignNodeType(ctx, id, type) {
+  ctx.base.refs.types.set(id, type);
 }
-function ge(e, r, t, n2) {
-  e.base.assignments.push({ t: 2, s: m(e, r), k: t, v: n2 });
+function validateNodeType(ctx, node, id, type) {
+  if (ctx.base.refs.types.get(id) !== type) throw new SerovalMalformedNodeError(node);
 }
-function Xt(e, r, t) {
-  e.base.assignments.push({ t: 3, s: m(e, r), k: t, v: o });
+function deserializeProperties(ctx, depth, node, result) {
+  const keys = node.k;
+  validateNodeList(node, keys);
+  validateNodeList(node, node.v);
+  if (keys.length > 0) for (let i = 0, vals = node.v, len = keys.length; i < len; i++) assignProperty(ctx, depth, result, keys[i], vals[i]);
+  return result;
 }
-function Ne(e, r, t, n2) {
-  qr(e.base, m(e, r) + "[" + t + "]", n2);
+function deserializeObject(ctx, depth, node) {
+  const result = assignIndexedValue$1(ctx, node.i, node.t === 10 ? {} : /* @__PURE__ */ Object.create(null));
+  deserializeProperties(ctx, depth, node.p, result);
+  applyObjectFlag(result, node.o);
+  return result;
 }
-function jr(e, r, t, n2) {
-  qr(e.base, m(e, r) + "." + t, n2);
+function deserializeDate(ctx, node) {
+  return assignIndexedValue$1(ctx, node.i, new Date(node.s));
 }
-function Lo(e, r, t, n2) {
-  qr(e.base, m(e, r) + ".v[" + t + "]", n2);
+function deserializeTemporal(ctx, node) {
+  if (!(ctx.base.features & 64)) throw new SerovalUnsupportedNodeError(node);
+  let value;
+  switch (node.c) {
+    case 0:
+      value = Temporal.Instant.from(node.s);
+      break;
+    case 1:
+      value = Temporal.Duration.from(node.s);
+      break;
+    case 2:
+      value = Temporal.PlainDate.from(node.s);
+      break;
+    case 3:
+      value = Temporal.PlainDateTime.from(node.s);
+      break;
+    case 4:
+      value = Temporal.PlainMonthDay.from(node.s);
+      break;
+    case 5:
+      value = Temporal.PlainTime.from(node.s);
+      break;
+    case 6:
+      value = Temporal.PlainYearMonth.from(node.s);
+      break;
+    case 7:
+      value = Temporal.ZonedDateTime.from(node.s);
+      break;
+    default:
+      throw new SerovalMalformedNodeError(node);
+  }
+  return assignIndexedValue$1(ctx, node.i, value);
 }
-function F(e, r) {
-  return r.t === 4 && e.stack.includes(r.i);
+function deserializeRegExp(ctx, node) {
+  if (ctx.base.features & 32) {
+    const source = deserializeString(node.c);
+    if (source.length > MAX_REGEXP_SOURCE_LENGTH) throw new SerovalMalformedNodeError(node);
+    return assignIndexedValue$1(ctx, node.i, new RegExp(source, node.m));
+  }
+  throw new SerovalUnsupportedNodeError(node);
 }
-function ae(e, r, t) {
-  return e.mode === 1 && !Ur(e.base, r) ? t : m(e, r) + "=" + t;
+function deserializeSet(ctx, depth, node) {
+  const result = assignIndexedValue$1(ctx, node.i, /* @__PURE__ */ new Set());
+  validateNodeList(node, node.a);
+  for (let i = 0, items = node.a, len = items.length; i < len; i++) result.add(deserialize$1(ctx, depth, items[i]));
+  return result;
 }
-function Uo(e) {
-  return L + '.get("' + e.s + '")';
+function deserializeMap(ctx, depth, node) {
+  const result = assignIndexedValue$1(ctx, node.i, /* @__PURE__ */ new Map());
+  validateNodeList(node, node.e.k);
+  validateNodeList(node, node.e.v);
+  for (let i = 0, keys = node.e.k, vals = node.e.v, len = keys.length; i < len; i++) result.set(deserialize$1(ctx, depth, keys[i]), deserialize$1(ctx, depth, vals[i]));
+  return result;
 }
-function Qt(e, r, t, n2) {
-  return t ? F(e.base, t) ? (w$1(e.base, r), Ne(e, r, n2, m(e, t.i)), "") : f(e, t) : "";
+function deserializeArrayBuffer(ctx, node) {
+  if (typeof node.s !== "string") throw new SerovalMalformedNodeError(node);
+  if (node.s.length > ctx.base.maxBase64Length) throw new RangeError("ArrayBuffer exceeds maxBase64Length (" + ctx.base.maxBase64Length + ")");
+  const source = deserializeString(node.s);
+  let buffer;
+  if (source.length < MIN_NATIVE_BASE64_LENGTH || typeof Buffer === "undefined") buffer = ARRAY_BUFFER_CONSTRUCTOR(source);
+  else {
+    const decoded = atob(source);
+    buffer = new ArrayBuffer(decoded.length);
+    Buffer.from(buffer).write(decoded, "latin1");
+  }
+  return assignIndexedValue$1(ctx, node.i, buffer);
 }
-function jo(e, r) {
-  let t = r.i, n2 = r.a, a = n2.length;
-  if (a > 0) {
-    e.base.stack.push(t);
-    let s = Qt(e, t, n2[0], 0), i = s === "";
-    for (let u = 1, l; u < a; u++) l = Qt(e, t, n2[u], u), s += "," + l, i = l === "";
-    return e.base.stack.pop(), Yr(e, r.o, r.i), "[" + s + (i ? ",]" : "]");
+function deserializeTypedArray(ctx, depth, node) {
+  var _node$b;
+  const construct = getTypedArrayConstructor(node.c);
+  const source = deserialize$1(ctx, depth, node.f);
+  if (!(source instanceof ArrayBuffer)) throw new SerovalMalformedNodeError(node);
+  const offset = (_node$b = node.b) !== null && _node$b !== void 0 ? _node$b : 0;
+  if (offset < 0 || offset > source.byteLength) throw new SerovalMalformedNodeError(node);
+  return assignIndexedValue$1(ctx, node.i, new construct(source, offset, node.l));
+}
+function deserializeDataView(ctx, depth, node) {
+  var _node$b2;
+  const source = deserialize$1(ctx, depth, node.f);
+  if (!(source instanceof ArrayBuffer)) throw new SerovalMalformedNodeError(node);
+  const offset = (_node$b2 = node.b) !== null && _node$b2 !== void 0 ? _node$b2 : 0;
+  if (offset < 0 || offset > source.byteLength) throw new SerovalMalformedNodeError(node);
+  return assignIndexedValue$1(ctx, node.i, new DataView(source, offset, node.l));
+}
+function deserializeDictionary(ctx, depth, node, result) {
+  if (node.p) {
+    const fields = deserializeProperties(ctx, depth, node.p, {});
+    Object.defineProperties(result, Object.getOwnPropertyDescriptors(fields));
+  }
+  return result;
+}
+function deserializeAggregateError(ctx, depth, node) {
+  return deserializeDictionary(ctx, depth, node, assignIndexedValue$1(ctx, node.i, new AggregateError([], deserializeString(node.m))));
+}
+function deserializeError(ctx, depth, node) {
+  const construct = deserializeKnownValue(node, ERROR_CONSTRUCTOR, node.s);
+  return deserializeDictionary(ctx, depth, node, assignIndexedValue$1(ctx, node.i, new construct(deserializeString(node.m))));
+}
+function deserializePromise(ctx, depth, node) {
+  const deferred = PROMISE_CONSTRUCTOR();
+  const result = assignIndexedValue$1(ctx, node.i, deferred.p);
+  const deserialized = deserialize$1(ctx, depth, node.f);
+  if (isThennable(deserialized)) throw new SerovalMalformedNodeError(node.f);
+  if (node.s) deferred.s(deserialized);
+  else deferred.f(deserialized);
+  return result;
+}
+function deserializeBoxed(ctx, depth, node) {
+  return assignIndexedValue$1(ctx, node.i, Object(deserialize$1(ctx, depth, node.f)));
+}
+function deserializePlugin(ctx, depth, node) {
+  const currentPlugins = ctx.base.plugins;
+  if (currentPlugins) {
+    const tag = deserializeString(node.c);
+    for (let i = 0, len = currentPlugins.length; i < len; i++) {
+      const plugin = currentPlugins[i];
+      if (plugin.tag === tag) return assignIndexedValue$1(ctx, node.i, plugin.deserialize(node.s, new DeserializePluginContext(ctx, depth), { id: node.i }));
+    }
+  }
+  throw new SerovalMissingPluginError(node.c);
+}
+function deserializePromiseConstructor(ctx, node) {
+  const value = assignIndexedValue$1(ctx, node.i, assignIndexedValue$1(ctx, node.s, PROMISE_CONSTRUCTOR()).p);
+  assignNodeType(ctx, node.s, 22);
+  return value;
+}
+function deserializePromiseFulfill(ctx, depth, node) {
+  const deferred = ctx.base.refs.get(node.i);
+  if (deferred) {
+    validateNodeType(ctx, node, node.i, 22);
+    const deserialized = deserialize$1(ctx, depth, node.a[1]);
+    if (isThennable(deserialized)) throw new SerovalMalformedNodeError(node.a[1]);
+    if (node.t === 23) deferred.s(deserialized);
+    else deferred.f(deserialized);
+    return;
+  }
+  throw new SerovalMissingInstanceError("Promise");
+}
+function deserializeIteratorFactoryInstance(ctx, depth, node) {
+  deserialize$1(ctx, depth, node.a[0]);
+  const source = deserialize$1(ctx, depth, node.a[1]);
+  if (!isSequence(source)) throw new SerovalMalformedNodeError(node.a[1]);
+  return sequenceToIterator(source);
+}
+function deserializeAsyncIteratorFactoryInstance(ctx, depth, node) {
+  deserialize$1(ctx, depth, node.a[0]);
+  const source = deserialize$1(ctx, depth, node.a[1]);
+  if (!isStream(source)) throw new SerovalMalformedNodeError(node.a[1]);
+  return streamToAsyncIterable(source);
+}
+function deserializeStreamConstructor(ctx, depth, node) {
+  const result = assignIndexedValue$1(ctx, node.i, createStream());
+  assignNodeType(ctx, node.i, 31);
+  const items = node.a;
+  validateNodeList(node, items);
+  const len = items.length;
+  if (len) for (let i = 0; i < len; i++) deserialize$1(ctx, depth, items[i]);
+  return result;
+}
+function deserializeStreamNext(ctx, depth, node) {
+  const deferred = ctx.base.refs.get(node.i);
+  if (deferred) {
+    validateNodeType(ctx, node, node.i, 31);
+    deferred.next(deserialize$1(ctx, depth, node.f));
+    return;
+  }
+  throw new SerovalMissingInstanceError("Stream");
+}
+function deserializeStreamThrow(ctx, depth, node) {
+  const deferred = ctx.base.refs.get(node.i);
+  if (deferred) {
+    validateNodeType(ctx, node, node.i, 31);
+    deferred.throw(deserialize$1(ctx, depth, node.f));
+    return;
+  }
+  throw new SerovalMissingInstanceError("Stream");
+}
+function deserializeStreamReturn(ctx, depth, node) {
+  const deferred = ctx.base.refs.get(node.i);
+  if (deferred) {
+    validateNodeType(ctx, node, node.i, 31);
+    deferred.return(deserialize$1(ctx, depth, node.f));
+    return;
+  }
+  throw new SerovalMissingInstanceError("Stream");
+}
+function deserializeIteratorFactory(ctx, depth, node) {
+  deserialize$1(ctx, depth, node.f);
+}
+function deserializeAsyncIteratorFactory(ctx, depth, node) {
+  deserialize$1(ctx, depth, node.a[1]);
+}
+function isSequenceIndex(value, size) {
+  return Number.isInteger(value) && value >= -1 && value < size;
+}
+function deserializeSequence(ctx, depth, node) {
+  validateNodeList(node, node.a);
+  const size = node.a.length;
+  if (!(isSequenceIndex(node.s, size) && isSequenceIndex(node.l, size))) throw new SerovalMalformedNodeError(node);
+  const result = assignIndexedValue$1(ctx, node.i, createSequence([], node.s, node.l));
+  for (let i = 0; i < size; i++) result.v[i] = deserialize$1(ctx, depth, node.a[i]);
+  return result;
+}
+function deserialize$1(ctx, depth, node) {
+  if (depth > ctx.base.depthLimit) throw new SerovalDepthLimitError(ctx.base.depthLimit);
+  depth += 1;
+  switch (node.t) {
+    case 2:
+      return deserializeKnownValue(node, CONSTANT_VAL, node.s);
+    case 0:
+      return Number(node.s);
+    case 1:
+      return deserializeString(String(node.s));
+    case 3:
+      if (String(node.s).length > MAX_BIGINT_LENGTH) throw new SerovalMalformedNodeError(node);
+      return BigInt(node.s);
+    case 4:
+      return ctx.base.refs.get(node.i);
+    case 18:
+      return deserializeReference(ctx, node);
+    case 9:
+      return deserializeArray(ctx, depth, node);
+    case 10:
+    case 11:
+      return deserializeObject(ctx, depth, node);
+    case 5:
+      return deserializeDate(ctx, node);
+    case 6:
+      return deserializeRegExp(ctx, node);
+    case 7:
+      return deserializeSet(ctx, depth, node);
+    case 8:
+      return deserializeMap(ctx, depth, node);
+    case 19:
+      return deserializeArrayBuffer(ctx, node);
+    case 16:
+    case 15:
+      return deserializeTypedArray(ctx, depth, node);
+    case 20:
+      return deserializeDataView(ctx, depth, node);
+    case 14:
+      return deserializeAggregateError(ctx, depth, node);
+    case 13:
+      return deserializeError(ctx, depth, node);
+    case 12:
+      return deserializePromise(ctx, depth, node);
+    case 17:
+      return deserializeKnownValue(node, SYMBOL_REF, node.s);
+    case 21:
+      return deserializeBoxed(ctx, depth, node);
+    case 25:
+      return deserializePlugin(ctx, depth, node);
+    case 22:
+      return deserializePromiseConstructor(ctx, node);
+    case 23:
+    case 24:
+      return deserializePromiseFulfill(ctx, depth, node);
+    case 28:
+      return deserializeIteratorFactoryInstance(ctx, depth, node);
+    case 30:
+      return deserializeAsyncIteratorFactoryInstance(ctx, depth, node);
+    case 31:
+      return deserializeStreamConstructor(ctx, depth, node);
+    case 32:
+      return deserializeStreamNext(ctx, depth, node);
+    case 33:
+      return deserializeStreamThrow(ctx, depth, node);
+    case 34:
+      return deserializeStreamReturn(ctx, depth, node);
+    case 27:
+      return deserializeIteratorFactory(ctx, depth, node);
+    case 29:
+      return deserializeAsyncIteratorFactory(ctx, depth, node);
+    case 35:
+      return deserializeSequence(ctx, depth, node);
+    case 36:
+      return deserializeTemporal(ctx, node);
+    default:
+      throw new SerovalUnsupportedNodeError(node);
+  }
+}
+function deserializeTop(ctx, node) {
+  try {
+    return deserialize$1(ctx, 0, node);
+  } catch (error) {
+    throw new SerovalDeserializationError(error);
+  }
+}
+const RETURN = () => T;
+const SERIALIZED_RETURN = /* @__PURE__ */ RETURN.toString();
+const IS_MODERN = /* @__PURE__ */ /=>/.test(SERIALIZED_RETURN);
+function createFunction(parameters, body) {
+  if (IS_MODERN) return (parameters.length === 1 ? parameters[0] : "(" + parameters.join(",") + ")") + "=>" + (body.startsWith("{") ? "(" + body + ")" : body);
+  return "function(" + parameters.join(",") + "){return " + body + "}";
+}
+function createEffectfulFunction(parameters, body) {
+  if (IS_MODERN) return (parameters.length === 1 ? parameters[0] : "(" + parameters.join(",") + ")") + "=>{" + body + "}";
+  return "function(" + parameters.join(",") + "){" + body + "}";
+}
+const REF_START_CHARS = "hjkmoquxzABCDEFGHIJKLNPQRTUVWXYZ$_";
+const REF_START_CHARS_LEN = 34;
+const REF_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$_";
+const REF_CHARS_LEN = 64;
+function getIdentifier(index) {
+  let mod = index % REF_START_CHARS_LEN;
+  let ref = REF_START_CHARS[mod];
+  index = (index - mod) / REF_START_CHARS_LEN;
+  while (index > 0) {
+    mod = index % REF_CHARS_LEN;
+    ref += REF_CHARS[mod];
+    index = (index - mod) / REF_CHARS_LEN;
+  }
+  return ref;
+}
+const IDENTIFIER_CHECK = /^[$A-Z_][0-9A-Z_$]*$/i;
+function isValidIdentifier(name) {
+  const char = name[0];
+  return (char === "$" || char === "_" || char >= "A" && char <= "Z" || char >= "a" && char <= "z") && IDENTIFIER_CHECK.test(name);
+}
+function getAssignmentExpression(assignment) {
+  switch (assignment.t) {
+    case 0:
+      return assignment.s + "=" + assignment.v;
+    case 2:
+      return assignment.s + ".set(" + assignment.k + "," + assignment.v + ")";
+    case 1:
+      return assignment.s + ".add(" + assignment.v + ")";
+    case 3:
+      return assignment.s + ".delete(" + assignment.k + ")";
+    case 4:
+      return "Object.defineProperty(" + assignment.s + ',"__proto__",{value:' + assignment.k + ",configurable:!0,enumerable:!0,writable:!0})";
+  }
+}
+function mergeAssignments(assignments) {
+  const newAssignments = [];
+  let current = assignments[0];
+  for (let i = 1, len = assignments.length, item, prev = current; i < len; i++) {
+    item = assignments[i];
+    if (item.t === 0 && item.v === prev.v) current = {
+      t: 0,
+      s: item.s,
+      k: void 0,
+      v: getAssignmentExpression(current)
+    };
+    else if (item.t === 2 && item.s === prev.s) current = {
+      t: 2,
+      s: getAssignmentExpression(current),
+      k: item.k,
+      v: item.v
+    };
+    else if (item.t === 1 && item.s === prev.s) current = {
+      t: 1,
+      s: getAssignmentExpression(current),
+      k: void 0,
+      v: item.v
+    };
+    else if (item.t === 3 && item.s === prev.s) current = {
+      t: 3,
+      s: getAssignmentExpression(current),
+      k: item.k,
+      v: void 0
+    };
+    else {
+      newAssignments.push(current);
+      current = item;
+    }
+    prev = item;
+  }
+  newAssignments.push(current);
+  return newAssignments;
+}
+function resolveAssignments(assignments) {
+  if (assignments.length) {
+    let result = "";
+    const merged = mergeAssignments(assignments);
+    for (let i = 0, len = merged.length; i < len; i++) result += getAssignmentExpression(merged[i]) + ",";
+    return result;
+  }
+}
+const NULL_CONSTRUCTOR = "Object.create(null)";
+const SET_CONSTRUCTOR = "new Set";
+const MAP_CONSTRUCTOR = "new Map";
+const PROMISE_RESOLVE = "Promise.resolve";
+const PROMISE_REJECT = "Promise.reject";
+const OBJECT_FLAG_CONSTRUCTOR = {
+  [3]: "Object.freeze",
+  [2]: "Object.seal",
+  [1]: "Object.preventExtensions",
+  [0]: void 0
+};
+function createBaseSerializerContext(mode, options) {
+  return {
+    mode,
+    plugins: options.plugins,
+    features: options.features,
+    marked: new Set(options.markedRefs),
+    stack: [],
+    flags: [],
+    assignments: []
+  };
+}
+function createCrossSerializerContext(options) {
+  return {
+    mode: 2,
+    base: createBaseSerializerContext(2, options),
+    state: options,
+    child: void 0
+  };
+}
+var SerializePluginContext = class {
+  constructor(_p) {
+    this._p = _p;
+  }
+  serialize(node) {
+    return serialize$1(this._p, node);
+  }
+};
+function getVanillaRefParam(state, index) {
+  let actualIndex = state.valid.get(index);
+  if (actualIndex == null) {
+    actualIndex = state.valid.size;
+    state.valid.set(index, actualIndex);
+  }
+  let identifier = state.vars[actualIndex];
+  if (identifier == null) {
+    identifier = getIdentifier(actualIndex);
+    state.vars[actualIndex] = identifier;
+  }
+  return identifier;
+}
+function getCrossRefParam(id) {
+  return "$R[" + id + "]";
+}
+function getRefParam(ctx, id) {
+  return ctx.mode === 1 ? getVanillaRefParam(ctx.state, id) : getCrossRefParam(id);
+}
+function markSerializerRef(ctx, id) {
+  ctx.marked.add(id);
+}
+function isSerializerRefMarked(ctx, id) {
+  return ctx.marked.has(id);
+}
+function pushObjectFlag(ctx, flag, id) {
+  if (flag !== 0) {
+    markSerializerRef(ctx.base, id);
+    ctx.base.flags.push({
+      type: flag,
+      value: getRefParam(ctx, id)
+    });
+  }
+}
+function resolveFlags(ctx) {
+  let result = "";
+  for (let i = 0, current = ctx.flags, len = current.length; i < len; i++) {
+    const flag = current[i];
+    result += OBJECT_FLAG_CONSTRUCTOR[flag.type] + "(" + flag.value + "),";
+  }
+  return result;
+}
+function resolvePatches(ctx) {
+  const assignments = resolveAssignments(ctx.assignments);
+  const flags = resolveFlags(ctx);
+  if (assignments) {
+    if (flags) return assignments + flags;
+    return assignments;
+  }
+  return flags;
+}
+function createAssignment(ctx, source, value) {
+  ctx.assignments.push({
+    t: 0,
+    s: source,
+    k: void 0,
+    v: value
+  });
+}
+function createAddAssignment(ctx, ref, value) {
+  ctx.base.assignments.push({
+    t: 1,
+    s: getRefParam(ctx, ref),
+    k: void 0,
+    v: value
+  });
+}
+function createSetAssignment(ctx, ref, key, value) {
+  ctx.base.assignments.push({
+    t: 2,
+    s: getRefParam(ctx, ref),
+    k: key,
+    v: value
+  });
+}
+function createDeleteAssignment(ctx, ref, key) {
+  ctx.base.assignments.push({
+    t: 3,
+    s: getRefParam(ctx, ref),
+    k: key,
+    v: void 0
+  });
+}
+function createArrayAssign(ctx, ref, index, value) {
+  createAssignment(ctx.base, getRefParam(ctx, ref) + "[" + index + "]", value);
+}
+function createObjectAssign(ctx, ref, key, value) {
+  if (!isValidKey(key)) {
+    ctx.base.assignments.push({
+      t: 4,
+      s: getRefParam(ctx, ref),
+      k: value,
+      v: void 0
+    });
+    return;
+  }
+  createAssignment(ctx.base, getRefParam(ctx, ref) + "." + key, value);
+}
+function createSequenceAssign(ctx, ref, index, value) {
+  createAssignment(ctx.base, getRefParam(ctx, ref) + ".v[" + index + "]", value);
+}
+function isIndexedValueInStack(ctx, node) {
+  return node.t === 4 && ctx.stack.includes(node.i);
+}
+function assignIndexedValue(ctx, index, value) {
+  if (ctx.mode === 1 && !isSerializerRefMarked(ctx.base, index)) return value;
+  return getRefParam(ctx, index) + "=" + value;
+}
+function serializeReference(node) {
+  return '__SEROVAL_REFS__.get("' + node.s + '")';
+}
+function serializeArrayItem(ctx, id, item, index) {
+  if (item) {
+    if (isIndexedValueInStack(ctx.base, item)) {
+      markSerializerRef(ctx.base, id);
+      createArrayAssign(ctx, id, index, getRefParam(ctx, item.i));
+      return "";
+    }
+    return serialize$1(ctx, item);
+  }
+  return "";
+}
+function serializeArray(ctx, node) {
+  const id = node.i;
+  const list = node.a;
+  const len = list.length;
+  if (len > 0) {
+    ctx.base.stack.push(id);
+    let values = serializeArrayItem(ctx, id, list[0], 0);
+    let isHoley = values === "";
+    for (let i = 1, item; i < len; i++) {
+      item = serializeArrayItem(ctx, id, list[i], i);
+      values += "," + item;
+      isHoley = item === "";
+    }
+    ctx.base.stack.pop();
+    pushObjectFlag(ctx, node.o, node.i);
+    return "[" + values + (isHoley ? ",]" : "]");
   }
   return "[]";
 }
-function en(e, r, t, n2) {
-  if (typeof t == "string") {
-    let a = Number(t), s = a >= 0 && a.toString() === t || Mr(t);
-    if (F(e.base, n2)) {
-      let i = m(e, n2.i);
-      return w$1(e.base, r.i), s && a !== a ? jr(e, r.i, t, i) : Ne(e, r.i, s ? t : '"' + t + '"', i), "";
+function serializeProperty(ctx, source, key, val) {
+  if (typeof key === "string") {
+    const check = Number(key);
+    const isIdentifier = check >= 0 && check.toString() === key || isValidIdentifier(key);
+    if (isIndexedValueInStack(ctx.base, val)) {
+      const refParam = getRefParam(ctx, val.i);
+      markSerializerRef(ctx.base, source.i);
+      if (isIdentifier && check !== check) createObjectAssign(ctx, source.i, key, refParam);
+      else createArrayAssign(ctx, source.i, isIdentifier ? key : '"' + key + '"', refParam);
+      return "";
     }
-    return (s ? t : '"' + t + '"') + ":" + f(e, n2);
+    if (isValidKey(key)) return (isIdentifier ? key : '"' + key + '"') + ":" + serialize$1(ctx, val);
+    return '["' + key + '"]:' + serialize$1(ctx, val);
   }
-  return "[" + f(e, t) + "]:" + f(e, n2);
+  return "[" + serialize$1(ctx, key) + "]:" + serialize$1(ctx, val);
 }
-function un(e, r, t) {
-  let n2 = t.k, a = n2.length;
-  if (a > 0) {
-    let s = t.v;
-    e.base.stack.push(r.i);
-    let i = en(e, r, n2[0], s[0]);
-    for (let u = 1, l = i; u < a; u++) l = en(e, r, n2[u], s[u]), i += (l && i && ",") + l;
-    return e.base.stack.pop(), "{" + i + "}";
+function serializeProperties(ctx, source, record) {
+  const keys = record.k;
+  const len = keys.length;
+  if (len > 0) {
+    const values = record.v;
+    ctx.base.stack.push(source.i);
+    let result = serializeProperty(ctx, source, keys[0], values[0]);
+    for (let i = 1, item = result; i < len; i++) {
+      item = serializeProperty(ctx, source, keys[i], values[i]);
+      result += (item && result && ",") + item;
+    }
+    ctx.base.stack.pop();
+    return "{" + result + "}";
   }
   return "{}";
 }
-function Yo(e, r) {
-  return Yr(e, r.o, r.i), un(e, r, r.p);
+function serializeObject(ctx, node) {
+  pushObjectFlag(ctx, node.o, node.i);
+  return serializeProperties(ctx, node, node.p);
 }
-function qo(e, r, t, n2) {
-  let a = un(e, r, t);
-  return a !== "{}" ? "Object.assign(" + n2 + "," + a + ")" : n2;
+function serializeWithObjectAssign(ctx, source, value, serialized) {
+  const fields = serializeProperties(ctx, source, value);
+  if (fields !== "{}") return "Object.assign(" + serialized + "," + fields + ")";
+  return serialized;
 }
-function Wo(e, r, t, n2, a) {
-  let s = e.base, i = f(e, a), u = Number(n2), l = u >= 0 && u.toString() === n2 || Mr(n2);
-  if (F(s, a)) l && u !== u ? jr(e, r.i, n2, i) : Ne(e, r.i, l ? n2 : '"' + n2 + '"', i);
-  else {
-    let g = s.assignments;
-    s.assignments = t, l && u !== u ? jr(e, r.i, n2, i) : Ne(e, r.i, l ? n2 : '"' + n2 + '"', i), s.assignments = g;
-  }
-}
-function Go(e, r, t, n2, a) {
-  if (typeof n2 == "string") Wo(e, r, t, n2, a);
-  else {
-    let s = e.base, i = s.stack;
-    s.stack = [];
-    let u = f(e, a);
-    s.stack = i;
-    let l = s.assignments;
-    s.assignments = t, Ne(e, r.i, f(e, n2), u), s.assignments = l;
-  }
-}
-function Ko(e, r, t) {
-  let n2 = t.k, a = n2.length;
-  if (a > 0) {
-    let s = [], i = t.v;
-    e.base.stack.push(r.i);
-    for (let u = 0; u < a; u++) Go(e, r, s, n2[u], i[u]);
-    return e.base.stack.pop(), on(s);
-  }
-  return o;
-}
-function Wr(e, r, t) {
-  if (r.p) {
-    let n2 = e.base;
-    if (n2.features & 8) t = qo(e, r, r.p, t);
-    else {
-      w$1(n2, r.i);
-      let a = Ko(e, r, r.p);
-      if (a) return "(" + ae(e, r.i, t) + "," + a + m(e, r.i) + ")";
-    }
-  }
-  return t;
-}
-function Ho(e, r) {
-  return Yr(e, r.o, r.i), Wr(e, r, Oo);
-}
-function Jo(e) {
-  return 'new Date("' + e.s + '")';
-}
-function Zo(e, r) {
-  if (e.base.features & 32) return "/" + r.c + "/" + r.m;
-  throw new h(r);
-}
-function rn(e, r, t) {
-  let n2 = e.base;
-  return F(n2, t) ? (w$1(n2, r), Mo(e, r, m(e, t.i)), "") : f(e, t);
-}
-function $o(e, r) {
-  let t = wo, n2 = r.a, a = n2.length, s = r.i;
-  if (a > 0) {
-    e.base.stack.push(s);
-    let i = rn(e, s, n2[0]);
-    for (let u = 1, l = i; u < a; u++) l = rn(e, s, n2[u]), i += (l && i && ",") + l;
-    e.base.stack.pop(), i && (t += "([" + i + "])");
-  }
-  return t;
-}
-function tn(e, r, t, n2, a) {
-  let s = e.base;
-  if (F(s, t)) {
-    let i = m(e, t.i);
-    if (w$1(s, r), F(s, n2)) {
-      let l = m(e, n2.i);
-      return ge(e, r, i, l), "";
-    }
-    if (n2.t !== 4 && n2.i != null && Ur(s, n2.i)) {
-      let l = "(" + f(e, n2) + ",[" + a + "," + a + "])";
-      return ge(e, r, i, m(e, n2.i)), Xt(e, r, a), l;
-    }
-    let u = s.stack;
-    return s.stack = [], ge(e, r, i, f(e, n2)), s.stack = u, "";
-  }
-  if (F(s, n2)) {
-    let i = m(e, n2.i);
-    if (w$1(s, r), t.t !== 4 && t.i != null && Ur(s, t.i)) {
-      let l = "(" + f(e, t) + ",[" + a + "," + a + "])";
-      return ge(e, r, m(e, t.i), i), Xt(e, r, a), l;
-    }
-    let u = s.stack;
-    return s.stack = [], ge(e, r, f(e, t), i), s.stack = u, "";
-  }
-  return "[" + f(e, t) + "," + f(e, n2) + "]";
-}
-function Xo(e, r) {
-  let t = ho, n2 = r.e.k, a = n2.length, s = r.i, i = r.f, u = m(e, i.i), l = e.base;
-  if (a > 0) {
-    let g = r.e.v;
-    l.stack.push(s);
-    let S = tn(e, s, n2[0], g[0], u);
-    for (let d = 1, G = S; d < a; d++) G = tn(e, s, n2[d], g[d], u), S += (G && S && ",") + G;
-    l.stack.pop(), S && (t += "([" + S + "])");
-  }
-  return i.t === 26 && (w$1(l, i.i), t = "(" + f(e, i) + "," + t + ")"), t;
-}
-function Qo(e, r) {
-  return q(e, r.f) + '("' + r.s + '")';
-}
-function ea(e, r) {
-  return "new " + r.c + "(" + f(e, r.f) + "," + r.b + "," + r.l + ")";
-}
-function ra(e, r) {
-  return "new DataView(" + f(e, r.f) + "," + r.b + "," + r.l + ")";
-}
-function ta(e, r) {
-  let t = r.i;
-  e.base.stack.push(t);
-  let n2 = Wr(e, r, 'new AggregateError([],"' + r.m + '")');
-  return e.base.stack.pop(), n2;
-}
-function na(e, r) {
-  return Wr(e, r, "new " + Ce[r.s] + '("' + r.m + '")');
-}
-function oa(e, r) {
-  let t, n2 = r.f, a = r.i, s = r.s ? zo : _o, i = e.base;
-  if (F(i, n2)) {
-    let u = m(e, n2.i);
-    t = s + (r.s ? "().then(" + ir([], u) + ")" : "().catch(" + Kt([], "throw " + u) + ")");
+function serializeStringKeyAssignment(ctx, source, mainAssignments, key, value) {
+  const base = ctx.base;
+  const serialized = serialize$1(ctx, value);
+  const check = Number(key);
+  const isIdentifier = check >= 0 && check.toString() === key || isValidIdentifier(key);
+  if (isIndexedValueInStack(base, value)) {
+    if (isIdentifier && check !== check) createObjectAssign(ctx, source.i, key, serialized);
+    else createArrayAssign(ctx, source.i, isIdentifier ? key : '"' + key + '"', serialized);
   } else {
-    i.stack.push(a);
-    let u = f(e, n2);
-    i.stack.pop(), t = s + "(" + u + ")";
+    const parentAssignment = base.assignments;
+    base.assignments = mainAssignments;
+    if (isIdentifier && check !== check) createObjectAssign(ctx, source.i, key, serialized);
+    else createArrayAssign(ctx, source.i, isIdentifier ? key : '"' + key + '"', serialized);
+    base.assignments = parentAssignment;
   }
-  return t;
 }
-function aa(e, r) {
-  return "Object(" + f(e, r.f) + ")";
-}
-function q(e, r) {
-  let t = f(e, r);
-  return r.t === 4 ? t : "(" + t + ")";
-}
-function sa(e, r) {
-  if (e.mode === 1) throw new h(r);
-  return "(" + ae(e, r.s, q(e, r.f) + "()") + ").p";
-}
-function ia(e, r) {
-  if (e.mode === 1) throw new h(r);
-  return q(e, r.a[0]) + "(" + m(e, r.i) + "," + f(e, r.a[1]) + ")";
-}
-function ua(e, r) {
-  if (e.mode === 1) throw new h(r);
-  return q(e, r.a[0]) + "(" + m(e, r.i) + "," + f(e, r.a[1]) + ")";
-}
-function la(e, r) {
-  let t = e.base.plugins;
-  if (t) for (let n2 = 0, a = t.length; n2 < a; n2++) {
-    let s = t[n2];
-    if (s.tag === r.c) return e.child == null && (e.child = new Lr(e)), s.serialize(r.s, e.child, { id: r.i });
+function serializeAssignment(ctx, source, mainAssignments, key, value) {
+  if (typeof key === "string") serializeStringKeyAssignment(ctx, source, mainAssignments, key, value);
+  else {
+    const base = ctx.base;
+    const parent = base.stack;
+    base.stack = [];
+    const serialized = serialize$1(ctx, value);
+    base.stack = parent;
+    const parentAssignment = base.assignments;
+    base.assignments = mainAssignments;
+    createArrayAssign(ctx, source.i, serialize$1(ctx, key), serialized);
+    base.assignments = parentAssignment;
   }
-  throw new X(r.c);
 }
-function ca(e, r) {
-  let t = "", n2 = false;
-  return r.f.t !== 4 && (w$1(e.base, r.f.i), t = "(" + f(e, r.f) + ",", n2 = true), t += ae(e, r.i, "(" + At + ")(" + m(e, r.f.i) + ")"), n2 && (t += ")"), t;
-}
-function fa(e, r) {
-  return q(e, r.a[0]) + "(" + f(e, r.a[1]) + ")";
-}
-function Sa(e, r) {
-  let t = r.a[0], n2 = r.a[1], a = e.base, s = "";
-  t.t !== 4 && (w$1(a, t.i), s += "(" + f(e, t)), n2.t !== 4 && (w$1(a, n2.i), s += (s ? "," : "(") + f(e, n2)), s && (s += ",");
-  let i = ae(e, r.i, "(" + Et + ")(" + m(e, n2.i) + "," + m(e, t.i) + ")");
-  return s ? s + i + ")" : i;
-}
-function ma(e, r) {
-  return q(e, r.a[0]) + "(" + f(e, r.a[1]) + ")";
-}
-function pa(e, r) {
-  let t = ae(e, r.i, q(e, r.f) + "()"), n2 = r.a.length;
-  if (n2) {
-    let a = f(e, r.a[0]);
-    for (let s = 1; s < n2; s++) a += "," + f(e, r.a[s]);
-    return "(" + t + "," + a + "," + m(e, r.i) + ")";
+function serializeAssignments(ctx, source, node) {
+  const keys = node.k;
+  const len = keys.length;
+  if (len > 0) {
+    const mainAssignments = [];
+    const values = node.v;
+    ctx.base.stack.push(source.i);
+    for (let i = 0; i < len; i++) serializeAssignment(ctx, source, mainAssignments, keys[i], values[i]);
+    ctx.base.stack.pop();
+    return resolveAssignments(mainAssignments);
   }
-  return t;
 }
-function da(e, r) {
-  return m(e, r.i) + ".next(" + f(e, r.f) + ")";
+function serializeDictionary(ctx, node, init) {
+  if (node.p) {
+    const base = ctx.base;
+    if (base.features & 8) init = serializeWithObjectAssign(ctx, node, node.p, init);
+    else {
+      markSerializerRef(base, node.i);
+      const assignments = serializeAssignments(ctx, node, node.p);
+      if (assignments) return "(" + assignIndexedValue(ctx, node.i, init) + "," + assignments + getRefParam(ctx, node.i) + ")";
+    }
+  }
+  return init;
 }
-function ga(e, r) {
-  return m(e, r.i) + ".throw(" + f(e, r.f) + ")";
+function serializeNullConstructor(ctx, node) {
+  pushObjectFlag(ctx, node.o, node.i);
+  return serializeDictionary(ctx, node, NULL_CONSTRUCTOR);
 }
-function ya(e, r) {
-  return m(e, r.i) + ".return(" + f(e, r.f) + ")";
+function serializeDate(node) {
+  return 'new Date("' + node.s + '")';
 }
-function nn(e, r, t, n2) {
-  let a = e.base;
-  return F(a, n2) ? (w$1(a, r), Lo(e, r, t, m(e, n2.i)), "") : f(e, n2);
+const TEMPORAL_CONSTRUCTOR = {
+  [0]: "Temporal.Instant",
+  [1]: "Temporal.Duration",
+  [2]: "Temporal.PlainDate",
+  [3]: "Temporal.PlainDateTime",
+  [4]: "Temporal.PlainMonthDay",
+  [5]: "Temporal.PlainTime",
+  [6]: "Temporal.PlainYearMonth",
+  [7]: "Temporal.ZonedDateTime"
+};
+function serializeTemporal(ctx, node) {
+  if (ctx.base.features & 64) return TEMPORAL_CONSTRUCTOR[node.c] + '.from("' + node.s + '")';
+  throw new SerovalUnsupportedNodeError(node);
 }
-function Na(e, r) {
-  let t = r.a, n2 = t.length, a = r.i;
-  if (n2 > 0) {
-    e.base.stack.push(a);
-    let s = nn(e, a, 0, t[0]);
-    for (let i = 1, u = s; i < n2; i++) u = nn(e, a, i, t[i]), s += (u && s && ",") + u;
-    if (e.base.stack.pop(), s) return "{__SEROVAL_SEQUENCE__:!0,v:[" + s + "],t:" + r.s + ",d:" + r.l + "}";
+function serializeRegExp(ctx, node) {
+  if (ctx.base.features & 32) return "/" + deserializeString(node.c) + "/" + node.m;
+  throw new SerovalUnsupportedNodeError(node);
+}
+function serializeSetItem(ctx, id, item) {
+  const base = ctx.base;
+  if (isIndexedValueInStack(base, item)) {
+    markSerializerRef(base, id);
+    createAddAssignment(ctx, id, getRefParam(ctx, item.i));
+    return "";
+  }
+  return serialize$1(ctx, item);
+}
+function serializeSet(ctx, node) {
+  let serialized = SET_CONSTRUCTOR;
+  const items = node.a;
+  const size = items.length;
+  const id = node.i;
+  if (size > 0) {
+    ctx.base.stack.push(id);
+    let result = serializeSetItem(ctx, id, items[0]);
+    for (let i = 1, item = result; i < size; i++) {
+      item = serializeSetItem(ctx, id, items[i]);
+      result += (item && result && ",") + item;
+    }
+    ctx.base.stack.pop();
+    if (result) serialized += "([" + result + "])";
+  }
+  return serialized;
+}
+function serializeMapEntry(ctx, id, key, val, sentinel) {
+  const base = ctx.base;
+  if (isIndexedValueInStack(base, key)) {
+    const keyRef = getRefParam(ctx, key.i);
+    markSerializerRef(base, id);
+    if (isIndexedValueInStack(base, val)) {
+      createSetAssignment(ctx, id, keyRef, getRefParam(ctx, val.i));
+      return "";
+    }
+    if (val.t !== 4 && val.i != null && isSerializerRefMarked(base, val.i)) {
+      const serialized = "(" + serialize$1(ctx, val) + ",[" + sentinel + "," + sentinel + "])";
+      createSetAssignment(ctx, id, keyRef, getRefParam(ctx, val.i));
+      createDeleteAssignment(ctx, id, sentinel);
+      return serialized;
+    }
+    const parent = base.stack;
+    base.stack = [];
+    createSetAssignment(ctx, id, keyRef, serialize$1(ctx, val));
+    base.stack = parent;
+    return "";
+  }
+  if (isIndexedValueInStack(base, val)) {
+    const valueRef = getRefParam(ctx, val.i);
+    markSerializerRef(base, id);
+    if (key.t !== 4 && key.i != null && isSerializerRefMarked(base, key.i)) {
+      const serialized = "(" + serialize$1(ctx, key) + ",[" + sentinel + "," + sentinel + "])";
+      createSetAssignment(ctx, id, getRefParam(ctx, key.i), valueRef);
+      createDeleteAssignment(ctx, id, sentinel);
+      return serialized;
+    }
+    const parent = base.stack;
+    base.stack = [];
+    createSetAssignment(ctx, id, serialize$1(ctx, key), valueRef);
+    base.stack = parent;
+    return "";
+  }
+  return "[" + serialize$1(ctx, key) + "," + serialize$1(ctx, val) + "]";
+}
+function serializeMap(ctx, node) {
+  let serialized = MAP_CONSTRUCTOR;
+  const keys = node.e.k;
+  const size = keys.length;
+  const id = node.i;
+  const sentinel = node.f;
+  const sentinelId = getRefParam(ctx, sentinel.i);
+  const base = ctx.base;
+  if (size > 0) {
+    const vals = node.e.v;
+    base.stack.push(id);
+    let result = serializeMapEntry(ctx, id, keys[0], vals[0], sentinelId);
+    for (let i = 1, item = result; i < size; i++) {
+      item = serializeMapEntry(ctx, id, keys[i], vals[i], sentinelId);
+      result += (item && result && ",") + item;
+    }
+    base.stack.pop();
+    if (result) serialized += "([" + result + "])";
+  }
+  if (sentinel.t === 26) {
+    markSerializerRef(base, sentinel.i);
+    serialized = "(" + serialize$1(ctx, sentinel) + "," + serialized + ")";
+  }
+  return serialized;
+}
+function serializeArrayBuffer(ctx, node) {
+  return getConstructor(ctx, node.f) + '("' + node.s + '")';
+}
+function serializeTypedArray(ctx, node) {
+  return "new " + node.c + "(" + serialize$1(ctx, node.f) + "," + node.b + "," + node.l + ")";
+}
+function serializeDataView(ctx, node) {
+  return "new DataView(" + serialize$1(ctx, node.f) + "," + node.b + "," + node.l + ")";
+}
+function serializeAggregateError(ctx, node) {
+  const id = node.i;
+  ctx.base.stack.push(id);
+  const serialized = serializeDictionary(ctx, node, 'new AggregateError([],"' + node.m + '")');
+  ctx.base.stack.pop();
+  return serialized;
+}
+function serializeError(ctx, node) {
+  return serializeDictionary(ctx, node, "new " + ERROR_CONSTRUCTOR_STRING[node.s] + '("' + node.m + '")');
+}
+function serializePromise(ctx, node) {
+  let serialized;
+  const fulfilled = node.f;
+  const id = node.i;
+  const promiseConstructor = node.s ? PROMISE_RESOLVE : PROMISE_REJECT;
+  const base = ctx.base;
+  if (isIndexedValueInStack(base, fulfilled)) {
+    const ref = getRefParam(ctx, fulfilled.i);
+    serialized = promiseConstructor + (node.s ? "().then(" + createFunction([], ref) + ")" : "().catch(" + createEffectfulFunction([], "throw " + ref) + ")");
+  } else {
+    base.stack.push(id);
+    const result = serialize$1(ctx, fulfilled);
+    base.stack.pop();
+    serialized = promiseConstructor + "(" + result + ")";
+  }
+  return serialized;
+}
+function serializeBoxed(ctx, node) {
+  return "Object(" + serialize$1(ctx, node.f) + ")";
+}
+function getConstructor(ctx, node) {
+  const current = serialize$1(ctx, node);
+  return node.t === 4 ? current : "(" + current + ")";
+}
+function serializePromiseConstructor(ctx, node) {
+  if (ctx.mode === 1) throw new SerovalUnsupportedNodeError(node);
+  return "(" + assignIndexedValue(ctx, node.s, getConstructor(ctx, node.f) + "()") + ").p";
+}
+function serializePromiseResolve(ctx, node) {
+  if (ctx.mode === 1) throw new SerovalUnsupportedNodeError(node);
+  return getConstructor(ctx, node.a[0]) + "(" + getRefParam(ctx, node.i) + "," + serialize$1(ctx, node.a[1]) + ")";
+}
+function serializePromiseReject(ctx, node) {
+  if (ctx.mode === 1) throw new SerovalUnsupportedNodeError(node);
+  return getConstructor(ctx, node.a[0]) + "(" + getRefParam(ctx, node.i) + "," + serialize$1(ctx, node.a[1]) + ")";
+}
+function serializePlugin(ctx, node) {
+  const currentPlugins = ctx.base.plugins;
+  if (currentPlugins) for (let i = 0, len = currentPlugins.length; i < len; i++) {
+    const plugin = currentPlugins[i];
+    if (plugin.tag === node.c) {
+      if (ctx.child == null) ctx.child = new SerializePluginContext(ctx);
+      return plugin.serialize(node.s, ctx.child, { id: node.i });
+    }
+  }
+  throw new SerovalMissingPluginError(node.c);
+}
+function serializeIteratorFactory(ctx, node) {
+  let result = "";
+  let initialized = false;
+  if (node.f.t !== 4) {
+    markSerializerRef(ctx.base, node.f.i);
+    result = "(" + serialize$1(ctx, node.f) + ",";
+    initialized = true;
+  }
+  result += assignIndexedValue(ctx, node.i, "(" + SERIALIZED_ITERATOR_CONSTRUCTOR + ")(" + getRefParam(ctx, node.f.i) + ")");
+  if (initialized) result += ")";
+  return result;
+}
+function serializeIteratorFactoryInstance(ctx, node) {
+  return getConstructor(ctx, node.a[0]) + "(" + serialize$1(ctx, node.a[1]) + ")";
+}
+function serializeAsyncIteratorFactory(ctx, node) {
+  const promise = node.a[0];
+  const symbol = node.a[1];
+  const base = ctx.base;
+  let result = "";
+  if (promise.t !== 4) {
+    markSerializerRef(base, promise.i);
+    result += "(" + serialize$1(ctx, promise);
+  }
+  if (symbol.t !== 4) {
+    markSerializerRef(base, symbol.i);
+    result += (result ? "," : "(") + serialize$1(ctx, symbol);
+  }
+  if (result) result += ",";
+  const iterator = assignIndexedValue(ctx, node.i, "(" + SERIALIZED_ASYNC_ITERATOR_CONSTRUCTOR + ")(" + getRefParam(ctx, symbol.i) + "," + getRefParam(ctx, promise.i) + ")");
+  if (result) return result + iterator + ")";
+  return iterator;
+}
+function serializeAsyncIteratorFactoryInstance(ctx, node) {
+  return getConstructor(ctx, node.a[0]) + "(" + serialize$1(ctx, node.a[1]) + ")";
+}
+function serializeStreamConstructor(ctx, node) {
+  const result = assignIndexedValue(ctx, node.i, getConstructor(ctx, node.f) + "()");
+  const len = node.a.length;
+  if (len) {
+    let values = serialize$1(ctx, node.a[0]);
+    for (let i = 1; i < len; i++) values += "," + serialize$1(ctx, node.a[i]);
+    return "(" + result + "," + values + "," + getRefParam(ctx, node.i) + ")";
+  }
+  return result;
+}
+function serializeStreamNext(ctx, node) {
+  return getRefParam(ctx, node.i) + ".next(" + serialize$1(ctx, node.f) + ")";
+}
+function serializeStreamThrow(ctx, node) {
+  return getRefParam(ctx, node.i) + ".throw(" + serialize$1(ctx, node.f) + ")";
+}
+function serializeStreamReturn(ctx, node) {
+  return getRefParam(ctx, node.i) + ".return(" + serialize$1(ctx, node.f) + ")";
+}
+function serializeSequenceItem(ctx, id, index, item) {
+  const base = ctx.base;
+  if (isIndexedValueInStack(base, item)) {
+    markSerializerRef(base, id);
+    createSequenceAssign(ctx, id, index, getRefParam(ctx, item.i));
+    return "";
+  }
+  return serialize$1(ctx, item);
+}
+function serializeSequence(ctx, node) {
+  const items = node.a;
+  const size = items.length;
+  const id = node.i;
+  if (size > 0) {
+    ctx.base.stack.push(id);
+    let result = serializeSequenceItem(ctx, id, 0, items[0]);
+    for (let i = 1, item = result; i < size; i++) {
+      item = serializeSequenceItem(ctx, id, i, items[i]);
+      result += (item && result && ",") + item;
+    }
+    ctx.base.stack.pop();
+    if (result) return "{__SEROVAL_SEQUENCE__:!0,v:[" + result + "],t:" + node.s + ",d:" + node.l + "}";
   }
   return "{__SEROVAL_SEQUENCE__:!0,v:[],t:-1,d:0}";
 }
-function ba(e, r) {
-  switch (r.t) {
+function serializeAssignable(ctx, node) {
+  switch (node.t) {
     case 17:
-      return tt[r.s];
+      return SYMBOL_STRING[node.s];
     case 18:
-      return Uo(r);
+      return serializeReference(node);
     case 9:
-      return jo(e, r);
+      return serializeArray(ctx, node);
     case 10:
-      return Yo(e, r);
+      return serializeObject(ctx, node);
     case 11:
-      return Ho(e, r);
+      return serializeNullConstructor(ctx, node);
     case 5:
-      return Jo(r);
+      return serializeDate(node);
     case 6:
-      return Zo(e, r);
+      return serializeRegExp(ctx, node);
     case 7:
-      return $o(e, r);
+      return serializeSet(ctx, node);
     case 8:
-      return Xo(e, r);
+      return serializeMap(ctx, node);
     case 19:
-      return Qo(e, r);
+      return serializeArrayBuffer(ctx, node);
     case 16:
     case 15:
-      return ea(e, r);
+      return serializeTypedArray(ctx, node);
     case 20:
-      return ra(e, r);
+      return serializeDataView(ctx, node);
     case 14:
-      return ta(e, r);
+      return serializeAggregateError(ctx, node);
     case 13:
-      return na(e, r);
+      return serializeError(ctx, node);
     case 12:
-      return oa(e, r);
+      return serializePromise(ctx, node);
     case 21:
-      return aa(e, r);
+      return serializeBoxed(ctx, node);
     case 22:
-      return sa(e, r);
+      return serializePromiseConstructor(ctx, node);
     case 25:
-      return la(e, r);
+      return serializePlugin(ctx, node);
     case 26:
-      return Ot[r.s];
+      return SPECIAL_REF_STRING[node.s];
     case 35:
-      return Na(e, r);
+      return serializeSequence(ctx, node);
+    case 36:
+      return serializeTemporal(ctx, node);
     default:
-      throw new h(r);
+      throw new SerovalUnsupportedNodeError(node);
   }
 }
-function f(e, r) {
-  switch (r.t) {
+function serialize$1(ctx, node) {
+  switch (node.t) {
     case 2:
-      return ot[r.s];
+      return CONSTANT_STRING[node.s];
     case 0:
-      return "" + r.s;
+      return "" + node.s;
     case 1:
-      return '"' + r.s + '"';
+      return '"' + node.s + '"';
     case 3:
-      return r.s + "n";
+      return node.s + "n";
     case 4:
-      return m(e, r.i);
+      return getRefParam(ctx, node.i);
     case 23:
-      return ia(e, r);
+      return serializePromiseResolve(ctx, node);
     case 24:
-      return ua(e, r);
+      return serializePromiseReject(ctx, node);
     case 27:
-      return ca(e, r);
+      return serializeIteratorFactory(ctx, node);
     case 28:
-      return fa(e, r);
+      return serializeIteratorFactoryInstance(ctx, node);
     case 29:
-      return Sa(e, r);
+      return serializeAsyncIteratorFactory(ctx, node);
     case 30:
-      return ma(e, r);
+      return serializeAsyncIteratorFactoryInstance(ctx, node);
     case 31:
-      return pa(e, r);
+      return serializeStreamConstructor(ctx, node);
     case 32:
-      return da(e, r);
+      return serializeStreamNext(ctx, node);
     case 33:
-      return ga(e, r);
+      return serializeStreamThrow(ctx, node);
     case 34:
-      return ya(e, r);
+      return serializeStreamReturn(ctx, node);
     default:
-      return ae(e, r.i, ba(e, r));
+      return assignIndexedValue(ctx, node.i, serializeAssignable(ctx, node));
   }
 }
-function fr(e, r) {
-  let t = f(e, r), n2 = r.i;
-  if (n2 == null) return t;
-  let a = sn(e.base), s = m(e, n2), i = e.state.scopeId, u = i == null ? "" : le, l = a ? "(" + t + "," + a + s + ")" : t;
-  if (u === "") return r.t === 10 && !a ? "(" + l + ")" : l;
-  let g = i == null ? "()" : "(" + le + '["' + y(i) + '"])';
-  return "(" + ir([u], l) + ")" + g;
+function serializeTopCross(ctx, tree) {
+  const result = serialize$1(ctx, tree);
+  const id = tree.i;
+  if (id == null) return result;
+  const patches = resolvePatches(ctx.base);
+  const ref = getRefParam(ctx, id);
+  const scopeId = ctx.state.scopeId;
+  const params = scopeId == null ? "" : "$R";
+  const body = patches ? "(" + result + "," + patches + ref + ")" : result;
+  if (params === "") {
+    if (tree.t === 10 && !patches) return "(" + body + ")";
+    return body;
+  }
+  const args = scopeId == null ? "()" : '($R["' + serializeString(scopeId) + '"])';
+  return "(" + createFunction([params], body) + ")" + args;
 }
-var Kr = class {
-  constructor(r, t) {
-    this._p = r;
-    this.depth = t;
+var SyncParsePluginContext = class {
+  constructor(_p, depth) {
+    this._p = _p;
+    this.depth = depth;
   }
-  parse(r) {
-    return E(this._p, this.depth, r);
+  parse(current) {
+    return parseSOS(this._p, this.depth, current);
   }
-}, Hr = class {
-  constructor(r, t) {
-    this._p = r;
-    this.depth = t;
+};
+var StreamParsePluginContext = class {
+  constructor(_p, depth) {
+    this._p = _p;
+    this.depth = depth;
   }
-  parse(r) {
-    return E(this._p, this.depth, r);
+  parse(current) {
+    return parseSOS(this._p, this.depth, current);
   }
-  parseWithError(r) {
-    return W(this._p, this.depth, r);
+  parseWithError(current) {
+    return parseWithError(this._p, this.depth, current);
   }
   isAlive() {
     return this._p.state.alive;
   }
   pushPendingState() {
-    Qr(this._p);
+    pushPendingState(this._p);
   }
   popPendingState() {
-    be(this._p);
+    popPendingState(this._p);
   }
-  onParse(r) {
-    se(this._p, r);
+  onParse(node) {
+    onParse(this._p, node);
   }
-  onError(r) {
-    $r(this._p, r);
+  onError(error) {
+    onError(this._p, error);
+  }
+  addCleanup(callback) {
+    this._p.state.cleanups.push(callback);
   }
 };
-function va(e) {
-  return { alive: true, pending: 0, initial: true, buffer: [], onParse: e.onParse, onError: e.onError, onDone: e.onDone };
+function createStreamParserState(options) {
+  return {
+    alive: true,
+    pending: 0,
+    initial: true,
+    buffer: [],
+    onParse: options.onParse,
+    onError: options.onError,
+    onDone: options.onDone,
+    cleanups: []
+  };
 }
-function Jr(e) {
-  return { type: 2, base: me(2, e), state: va(e) };
+function createStreamParserContext(options) {
+  return {
+    type: 2,
+    base: createBaseParserContext(2, options),
+    state: createStreamParserState(options)
+  };
 }
-function Ca(e, r, t) {
-  let n2 = [];
-  for (let a = 0, s = t.length; a < s; a++) a in t ? n2[a] = E(e, r, t[a]) : n2[a] = 0;
-  return n2;
+function parseItems(ctx, depth, current) {
+  const nodes = [];
+  for (let i = 0, len = current.length; i < len; i++) if (i in current) nodes[i] = parseSOS(ctx, depth, current[i]);
+  else nodes[i] = 0;
+  return nodes;
 }
-function Aa(e, r, t, n2) {
-  return _e(t, n2, Ca(e, r, n2));
+function parseArray(ctx, depth, id, current) {
+  return createArrayNode(id, current, parseItems(ctx, depth, current));
 }
-function Zr(e, r, t) {
-  let n2 = Object.entries(t), a = [], s = [];
-  for (let i = 0, u = n2.length; i < u; i++) a.push(y(n2[i][0])), s.push(E(e, r, n2[i][1]));
-  return C in t && (a.push(I(e.base, C)), s.push(Ue(rr(e.base), E(e, r, $e(t))))), v in t && (a.push(I(e.base, v)), s.push(je(tr(e.base), E(e, r, e.type === 1 ? re() : Qe(t))))), P$1 in t && (a.push(I(e.base, P$1)), s.push($(t[P$1]))), R in t && (a.push(I(e.base, R)), s.push(t[R] ? H : J)), { k: a, v: s };
+function parseProperties(ctx, depth, properties) {
+  const entries = Object.entries(properties);
+  const keyNodes = [];
+  const valueNodes = [];
+  for (let i = 0, len = entries.length; i < len; i++) {
+    keyNodes.push(serializeString(entries[i][0]));
+    valueNodes.push(parseSOS(ctx, depth, entries[i][1]));
+  }
+  if (SYM_ITERATOR in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_ITERATOR));
+    valueNodes.push(createIteratorFactoryInstanceNode(parseIteratorFactory(ctx.base), parseSOS(ctx, depth, createSequenceFromIterable(properties))));
+  }
+  if (SYM_ASYNC_ITERATOR in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_ASYNC_ITERATOR));
+    valueNodes.push(createAsyncIteratorFactoryInstanceNode(parseAsyncIteratorFactory(ctx.base), parseSOS(ctx, depth, ctx.type === 1 ? createStream() : createStreamFromAsyncIterable(properties, ctx.state.cleanups))));
+  }
+  if (SYM_TO_STRING_TAG in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_TO_STRING_TAG));
+    valueNodes.push(createStringNode(properties[SYM_TO_STRING_TAG]));
+  }
+  if (SYM_IS_CONCAT_SPREADABLE in properties) {
+    keyNodes.push(parseWellKnownSymbol(ctx.base, SYM_IS_CONCAT_SPREADABLE));
+    valueNodes.push(properties[SYM_IS_CONCAT_SPREADABLE] ? TRUE_NODE : FALSE_NODE);
+  }
+  return {
+    k: keyNodes,
+    v: valueNodes
+  };
 }
-function Gr(e, r, t, n2, a) {
-  return nr(t, n2, a, Zr(e, r, n2));
+function parsePlainObject(ctx, depth, id, current, empty) {
+  return createObjectNode(id, current, empty, parseProperties(ctx, depth, current));
 }
-function Ea(e, r, t, n2) {
-  return ke(t, E(e, r, n2.valueOf()));
+function parseBoxed(ctx, depth, id, current) {
+  return createBoxedNode(id, parseSOS(ctx, depth, current.valueOf()));
 }
-function Ia(e, r, t, n2) {
-  return De(t, n2, E(e, r, n2.buffer));
+function parseTypedArray(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createTypedArrayNode(id, current, parseSOS(ctx, depth, current.buffer));
 }
-function Ra(e, r, t, n2) {
-  return Fe(t, n2, E(e, r, n2.buffer));
+function parseBigIntTypedArray(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createBigIntTypedArrayNode(id, current, parseSOS(ctx, depth, current.buffer));
 }
-function Pa(e, r, t, n2) {
-  return Be(t, n2, E(e, r, n2.buffer));
+function parseDataView(ctx, depth, id, current) {
+  current = getArrayBufferView(ctx.base, current);
+  return createDataViewNode(id, current, parseSOS(ctx, depth, current.buffer));
 }
-function ln(e, r, t, n2) {
-  let a = Z(n2, e.base.features);
-  return Ve(t, n2, a ? Zr(e, r, a) : o);
+function parseError(ctx, depth, id, current) {
+  const options = getErrorOptions(current, ctx.base.features);
+  return createErrorNode(id, current, options ? parseProperties(ctx, depth, options) : void 0);
 }
-function xa(e, r, t, n2) {
-  let a = Z(n2, e.base.features);
-  return Me(t, n2, a ? Zr(e, r, a) : o);
+function parseAggregateError(ctx, depth, id, current) {
+  const options = getErrorOptions(current, ctx.base.features);
+  return createAggregateErrorNode(id, current, options ? parseProperties(ctx, depth, options) : void 0);
 }
-function Ta(e, r, t, n2) {
-  let a = [], s = [];
-  for (let [i, u] of n2.entries()) a.push(E(e, r, i)), s.push(E(e, r, u));
-  return or(e.base, t, a, s);
+function parseMap(ctx, depth, id, current) {
+  const keyNodes = [];
+  const valueNodes = [];
+  for (const [key, value] of current.entries()) {
+    keyNodes.push(parseSOS(ctx, depth, key));
+    valueNodes.push(parseSOS(ctx, depth, value));
+  }
+  return createMapNode(ctx.base, id, keyNodes, valueNodes);
 }
-function Oa(e, r, t, n2) {
-  let a = [];
-  for (let s of n2.keys()) a.push(E(e, r, s));
-  return Le(t, a);
+function parseSet(ctx, depth, id, current) {
+  const items = [];
+  for (const item of current.keys()) items.push(parseSOS(ctx, depth, item));
+  return createSetNode(id, items);
 }
-function wa(e, r, t, n2) {
-  let a = Ye(t, k(e.base, 4), []);
-  return e.type === 1 || (Qr(e), n2.on({ next: (s) => {
-    if (e.state.alive) {
-      let i = W(e, r, s);
-      i && se(e, qe(t, i));
+function parseStream(ctx, depth, id, current) {
+  const result = createStreamConstructorNode(id, parseSpecialReference(ctx.base, 4), []);
+  if (ctx.type === 1) return result;
+  pushPendingState(ctx);
+  current.on({
+    next: (value) => {
+      if (ctx.state.alive) {
+        const parsed = parseWithError(ctx, depth, value);
+        if (parsed) onParse(ctx, createStreamNextNode(id, parsed));
+      }
+    },
+    throw: (value) => {
+      if (ctx.state.alive) {
+        const parsed = parseWithError(ctx, depth, value);
+        if (parsed) onParse(ctx, createStreamThrowNode(id, parsed));
+      }
+      popPendingState(ctx);
+    },
+    return: (value) => {
+      if (ctx.state.alive) {
+        const parsed = parseWithError(ctx, depth, value);
+        if (parsed) onParse(ctx, createStreamReturnNode(id, parsed));
+      }
+      popPendingState(ctx);
     }
-  }, throw: (s) => {
-    if (e.state.alive) {
-      let i = W(e, r, s);
-      i && se(e, We(t, i));
-    }
-    be(e);
-  }, return: (s) => {
-    if (e.state.alive) {
-      let i = W(e, r, s);
-      i && se(e, Ge(t, i));
-    }
-    be(e);
-  } })), a;
+  });
+  return result;
 }
-function ha(e, r, t) {
+function handlePromiseSuccess(id, depth, data) {
   if (this.state.alive) {
-    let n2 = W(this, r, t);
-    n2 && se(this, c(23, e, o, o, o, o, o, [k(this.base, 2), n2], o, o, o, o)), be(this);
+    const parsed = parseWithError(this, depth, data);
+    if (parsed) onParse(this, createSerovalNode(23, id, void 0, void 0, void 0, void 0, void 0, [parseSpecialReference(this.base, 2), parsed], void 0, void 0, void 0, void 0));
+    popPendingState(this);
   }
 }
-function za(e, r, t) {
+function handlePromiseFailure(id, depth, data) {
   if (this.state.alive) {
-    let n2 = W(this, r, t);
-    n2 && se(this, c(24, e, o, o, o, o, o, [k(this.base, 3), n2], o, o, o, o));
+    const parsed = parseWithError(this, depth, data);
+    if (parsed) onParse(this, createSerovalNode(24, id, void 0, void 0, void 0, void 0, void 0, [parseSpecialReference(this.base, 3), parsed], void 0, void 0, void 0, void 0));
   }
-  be(this);
+  popPendingState(this);
 }
-function _a(e, r, t, n2) {
-  let a = zr(e.base, {});
-  return e.type === 2 && (Qr(e), n2.then(ha.bind(e, a, r), za.bind(e, a, r))), zt(e.base, t, a);
-}
-function ka(e, r, t, n2, a) {
-  for (let s = 0, i = a.length; s < i; s++) {
-    let u = a[s];
-    if (u.parse.sync && u.test(n2)) return ce(t, u.tag, u.parse.sync(n2, new Kr(e, r), { id: t }));
+function parsePromise(ctx, depth, id, current) {
+  const resolver = createIndexForValue(ctx.base, {});
+  if (ctx.type === 2) {
+    pushPendingState(ctx);
+    current.then(handlePromiseSuccess.bind(ctx, resolver, depth), handlePromiseFailure.bind(ctx, resolver, depth));
   }
-  return o;
+  return createPromiseConstructorNode(ctx.base, id, resolver);
 }
-function Da(e, r, t, n2, a) {
-  for (let s = 0, i = a.length; s < i; s++) {
-    let u = a[s];
-    if (u.parse.stream && u.test(n2)) return ce(t, u.tag, u.parse.stream(n2, new Hr(e, r), { id: t }));
+function parsePluginSync(ctx, depth, id, current, currentPlugins) {
+  for (let i = 0, len = currentPlugins.length; i < len; i++) {
+    const plugin = currentPlugins[i];
+    if (plugin.parse.sync && plugin.test(current)) return createPluginNode(id, plugin.tag, plugin.parse.sync(current, new SyncParsePluginContext(ctx, depth), { id }));
   }
-  return o;
 }
-function cn(e, r, t, n2) {
-  let a = e.base.plugins;
-  return a ? e.type === 1 ? ka(e, r, t, n2, a) : Da(e, r, t, n2, a) : o;
+function parsePluginStream(ctx, depth, id, current, currentPlugins) {
+  for (let i = 0, len = currentPlugins.length; i < len; i++) {
+    const plugin = currentPlugins[i];
+    if (plugin.parse.stream && plugin.test(current)) return createPluginNode(id, plugin.tag, plugin.parse.stream(current, new StreamParsePluginContext(ctx, depth), { id }));
+  }
 }
-function Fa(e, r, t, n2) {
-  let a = [];
-  for (let s = 0, i = n2.v.length; s < i; s++) a[s] = E(e, r, n2.v[s]);
-  return Ke(t, a, n2.t, n2.d);
+function parsePlugin(ctx, depth, id, current) {
+  const currentPlugins = ctx.base.plugins;
+  if (currentPlugins) return ctx.type === 1 ? parsePluginSync(ctx, depth, id, current, currentPlugins) : parsePluginStream(ctx, depth, id, current, currentPlugins);
 }
-function Ba(e, r, t, n2, a) {
-  switch (a) {
+function parseSequence(ctx, depth, id, current) {
+  const nodes = [];
+  for (let i = 0, len = current.v.length; i < len; i++) nodes[i] = parseSOS(ctx, depth, current.v[i]);
+  return createSequenceNode(id, nodes, current.t, current.d);
+}
+function parseObjectPhase2(ctx, depth, id, current, currentClass) {
+  switch (currentClass) {
     case Object:
-      return Gr(e, r, t, n2, false);
-    case o:
-      return Gr(e, r, t, n2, true);
+      return parsePlainObject(ctx, depth, id, current, false);
+    case void 0:
+      return parsePlainObject(ctx, depth, id, current, true);
     case Date:
-      return he(t, n2);
+      return createDateNode(id, current);
     case Error:
     case EvalError:
     case RangeError:
@@ -2587,14 +3555,14 @@ function Ba(e, r, t, n2, a) {
     case SyntaxError:
     case TypeError:
     case URIError:
-      return ln(e, r, t, n2);
+      return parseError(ctx, depth, id, current);
     case Number:
     case Boolean:
     case String:
     case BigInt:
-      return Ea(e, r, t, n2);
+      return parseBoxed(ctx, depth, id, current);
     case ArrayBuffer:
-      return ar(e.base, t, n2);
+      return createArrayBufferNode(ctx.base, id, current);
     case Int8Array:
     case Int16Array:
     case Int32Array:
@@ -2604,173 +3572,228 @@ function Ba(e, r, t, n2, a) {
     case Uint8ClampedArray:
     case Float32Array:
     case Float64Array:
-      return Ia(e, r, t, n2);
+      return parseTypedArray(ctx, depth, id, current);
     case DataView:
-      return Pa(e, r, t, n2);
+      return parseDataView(ctx, depth, id, current);
     case Map:
-      return Ta(e, r, t, n2);
+      return parseMap(ctx, depth, id, current);
     case Set:
-      return Oa(e, r, t, n2);
+      return parseSet(ctx, depth, id, current);
   }
-  if (a === Promise || n2 instanceof Promise) return _a(e, r, t, n2);
-  let s = e.base.features;
-  if (s & 32 && a === RegExp) return ze(t, n2);
-  if (s & 16) switch (a) {
+  if (currentClass === Promise || current instanceof Promise) return parsePromise(ctx, depth, id, current);
+  const currentFeatures = ctx.base.features;
+  if (currentFeatures & 32 && currentClass === RegExp) return createRegExpNode(id, current);
+  if (currentFeatures & 16) switch (currentClass) {
     case BigInt64Array:
     case BigUint64Array:
-      return Ra(e, r, t, n2);
+      return parseBigIntTypedArray(ctx, depth, id, current);
   }
-  if (s & 1 && typeof AggregateError != "undefined" && (a === AggregateError || n2 instanceof AggregateError)) return xa(e, r, t, n2);
-  if (n2 instanceof Error) return ln(e, r, t, n2);
-  if (C in n2 || v in n2) return Gr(e, r, t, n2, !!a);
-  throw new x$1(n2);
+  if (currentFeatures & 1 && typeof AggregateError !== "undefined" && (currentClass === AggregateError || current instanceof AggregateError)) return parseAggregateError(ctx, depth, id, current);
+  if (currentFeatures & 64 && typeof Temporal !== "undefined") switch (currentClass) {
+    case Temporal.Instant:
+      return createTemporalNode(id, 0, current);
+    case Temporal.Duration:
+      return createTemporalNode(id, 1, current);
+    case Temporal.PlainDate:
+      return createTemporalNode(id, 2, current);
+    case Temporal.PlainDateTime:
+      return createTemporalNode(id, 3, current);
+    case Temporal.PlainMonthDay:
+      return createTemporalNode(id, 4, current);
+    case Temporal.PlainTime:
+      return createTemporalNode(id, 5, current);
+    case Temporal.PlainYearMonth:
+      return createTemporalNode(id, 6, current);
+    case Temporal.ZonedDateTime:
+      return createTemporalNode(id, 7, current);
+  }
+  if (current instanceof Error) return parseError(ctx, depth, id, current);
+  if (SYM_ITERATOR in current || SYM_ASYNC_ITERATOR in current) return parsePlainObject(ctx, depth, id, current, !!currentClass);
+  throw new SerovalUnsupportedTypeError(current);
 }
-function Va(e, r, t, n2) {
-  if (Array.isArray(n2)) return Aa(e, r, t, n2);
-  if (Xe(n2)) return wa(e, r, t, n2);
-  if (Ze(n2)) return Fa(e, r, t, n2);
-  let a = n2.constructor;
-  if (a === j) return E(e, r, n2.replacement);
-  let s = cn(e, r, t, n2);
-  return s || Ba(e, r, t, n2, a);
+function parseObject(ctx, depth, id, current) {
+  if (Array.isArray(current)) return parseArray(ctx, depth, id, current);
+  if (isStream(current)) return parseStream(ctx, depth, id, current);
+  if (isSequence(current)) return parseSequence(ctx, depth, id, current);
+  let currentClass = current.constructor;
+  if (currentClass !== void 0 && typeof currentClass !== "function") {
+    const proto = Object.getPrototypeOf(current);
+    currentClass = proto === null ? void 0 : proto.constructor;
+  }
+  if (currentClass === OpaqueReference) return parseSOS(ctx, depth, current.replacement);
+  const parsed = parsePlugin(ctx, depth, id, current);
+  if (parsed) return parsed;
+  return parseObjectPhase2(ctx, depth, id, current, currentClass);
 }
-function Ma(e, r, t) {
-  let n2 = Y(e.base, t);
-  if (n2.type !== 0) return n2.value;
-  let a = cn(e, r, n2.value, t);
-  if (a) return a;
-  throw new x$1(t);
+function parseFunction(ctx, depth, current) {
+  const ref = getReferenceNode(ctx.base, current);
+  if (ref.type !== 0) return ref.value;
+  const plugin = parsePlugin(ctx, depth, ref.value, current);
+  if (plugin) return plugin;
+  throw new SerovalUnsupportedTypeError(current);
 }
-function E(e, r, t) {
-  if (r >= e.base.depthLimit) throw new Q(e.base.depthLimit);
-  switch (typeof t) {
+function parseSOS(ctx, depth, current) {
+  if (depth >= ctx.base.depthLimit) throw new SerovalDepthLimitError(ctx.base.depthLimit);
+  switch (typeof current) {
     case "boolean":
-      return t ? H : J;
+      return current ? TRUE_NODE : FALSE_NODE;
     case "undefined":
-      return Ae;
+      return UNDEFINED_NODE;
     case "string":
-      return $(t);
+      return createStringNode(current);
     case "number":
-      return Oe(t);
+      return createNumberNode(current);
     case "bigint":
-      return we(t);
-    case "object": {
-      if (t) {
-        let n2 = Y(e.base, t);
-        return n2.type === 0 ? Va(e, r + 1, n2.value, t) : n2.value;
+      return createBigIntNode(current);
+    case "object":
+      if (current) {
+        const ref = getReferenceNode(ctx.base, current);
+        return ref.type === 0 ? parseObject(ctx, depth + 1, ref.value, current) : ref.value;
       }
-      return Ee;
-    }
+      return NULL_NODE;
     case "symbol":
-      return I(e.base, t);
+      return parseWellKnownSymbol(ctx.base, current);
     case "function":
-      return Ma(e, r, t);
+      return parseFunction(ctx, depth, current);
     default:
-      throw new x$1(t);
+      throw new SerovalUnsupportedTypeError(current);
   }
 }
-function se(e, r) {
-  e.state.initial ? e.state.buffer.push(r) : Xr(e, r, false);
+function onParse(ctx, node) {
+  if (ctx.state.initial) ctx.state.buffer.push(node);
+  else onParseInternal(ctx, node, false);
 }
-function $r(e, r) {
-  if (e.state.onError) e.state.onError(r);
-  else throw r instanceof z ? r : new z(r);
+function onError(ctx, error) {
+  if (ctx.state.onError) ctx.state.onError(error);
+  else throw error instanceof SerovalParserError ? error : new SerovalParserError(error);
 }
-function fn(e) {
-  e.state.onDone && e.state.onDone();
+function onDone(ctx) {
+  if (ctx.state.onDone) ctx.state.onDone();
+  for (let i = 0, len = ctx.state.cleanups.length; i < len; i++) ctx.state.cleanups[i]();
 }
-function Xr(e, r, t) {
+function onParseInternal(ctx, node, initial) {
   try {
-    e.state.onParse(r, t);
-  } catch (n2) {
-    $r(e, n2);
+    ctx.state.onParse(node, initial);
+  } catch (error) {
+    onError(ctx, error);
   }
 }
-function Qr(e) {
-  e.state.pending++;
+function pushPendingState(ctx) {
+  ctx.state.pending++;
 }
-function be(e) {
-  --e.state.pending <= 0 && fn(e);
+function popPendingState(ctx) {
+  if (--ctx.state.pending <= 0) onDone(ctx);
 }
-function W(e, r, t) {
+function parseWithError(ctx, depth, current) {
   try {
-    return E(e, r, t);
-  } catch (n2) {
-    return $r(e, n2), o;
+    return parseSOS(ctx, depth, current);
+  } catch (err) {
+    onError(ctx, err);
+    return;
   }
 }
-function et(e, r) {
-  let t = W(e, 0, r);
-  t && (Xr(e, t, true), e.state.initial = false, La(e, e.state), e.state.pending <= 0 && Sr(e));
+function startStreamParse(ctx, current) {
+  const parsed = parseWithError(ctx, 0, current);
+  if (parsed) {
+    onParseInternal(ctx, parsed, true);
+    ctx.state.initial = false;
+    flushStreamParse(ctx, ctx.state);
+    if (ctx.state.pending <= 0) destroyStreamParse(ctx);
+  }
 }
-function La(e, r) {
-  for (let t = 0, n2 = r.buffer.length; t < n2; t++) Xr(e, r.buffer[t], false);
+function flushStreamParse(ctx, state) {
+  for (let i = 0, len = state.buffer.length; i < len; i++) onParseInternal(ctx, state.buffer[i], false);
 }
-function Sr(e) {
-  e.state.alive && (fn(e), e.state.alive = false);
+function destroyStreamParse(ctx) {
+  if (ctx.state.alive) {
+    onDone(ctx);
+    ctx.state.alive = false;
+  }
 }
-async function su(e, r = {}) {
-  let t = A(r.plugins), n2 = te(2, { plugins: t, disabledFeatures: r.disabledFeatures, refs: r.refs });
-  return await ne(n2, e);
+async function toCrossJSONAsync(source, options = {}) {
+  const plugins = resolvePlugins(options.plugins);
+  return await parseTopAsync(createAsyncParserContext(2, {
+    compactArrayBufferViews: options.compactArrayBufferViews,
+    plugins,
+    disabledFeatures: options.disabledFeatures,
+    refs: options.refs
+  }), source);
 }
-function Sn(e, r) {
-  let t = A(r.plugins), n2 = Jr({ plugins: t, refs: r.refs, disabledFeatures: r.disabledFeatures, onParse(a, s) {
-    let i = lr({ plugins: t, features: n2.base.features, scopeId: r.scopeId, markedRefs: n2.base.marked }), u;
-    try {
-      u = fr(i, a);
-    } catch (l) {
-      r.onError && r.onError(l);
-      return;
-    }
-    r.onSerialize(u, s);
-  }, onError: r.onError, onDone: r.onDone });
-  return et(n2, e), Sr.bind(null, n2);
-}
-function iu(e, r) {
-  let t = A(r.plugins), n2 = Jr({ plugins: t, refs: r.refs, disabledFeatures: r.disabledFeatures, depthLimit: r.depthLimit, onParse: r.onParse, onError: r.onError, onDone: r.onDone });
-  return et(n2, e), Sr.bind(null, n2);
-}
-function Pu(e, r = {}) {
-  var i;
-  let t = A(r.plugins), n2 = r.disabledFeatures || 0, a = (i = e.f) != null ? i : 63, s = Lt({ plugins: t, markedRefs: e.m, features: a & ~n2, disabledFeatures: n2 });
-  return sr(s, e.t);
-}
-function createSerializationAdapter(opts) {
-  return opts;
-}
-// @__NO_SIDE_EFFECTS__
-function makeSsrSerovalPlugin(serializationAdapter, options) {
-  return /* @__PURE__ */ ai({
-    tag: "$TSR/t/" + serializationAdapter.key,
-    test: serializationAdapter.test,
-    parse: { stream(value, ctx, _data) {
-      return { v: ctx.parse(serializationAdapter.toSerializable(value)) };
-    } },
-    serialize(node, ctx, _data) {
-      options.didRun = true;
-      return GLOBAL_TSR + '.t.get("' + serializationAdapter.key + '")(' + ctx.serialize(node.v) + ")";
+function crossSerializeStream(source, options) {
+  const plugins = resolvePlugins(options.plugins);
+  const ctx = createStreamParserContext({
+    compactArrayBufferViews: options.compactArrayBufferViews,
+    plugins,
+    refs: options.refs,
+    disabledFeatures: options.disabledFeatures,
+    onParse(node, initial) {
+      const serial = createCrossSerializerContext({
+        plugins,
+        features: ctx.base.features,
+        scopeId: options.scopeId,
+        markedRefs: ctx.base.marked
+      });
+      let serialized;
+      try {
+        serialized = serializeTopCross(serial, node);
+      } catch (err) {
+        if (options.onError) options.onError(err);
+        return;
+      }
+      options.onSerialize(serialized, initial);
     },
-    deserialize: void 0
+    onError: options.onError,
+    onDone: options.onDone
   });
+  startStreamParse(ctx, source);
+  return destroyStreamParse.bind(null, ctx);
+}
+function toCrossJSONStream(source, options) {
+  const plugins = resolvePlugins(options.plugins);
+  const ctx = createStreamParserContext({
+    compactArrayBufferViews: options.compactArrayBufferViews,
+    plugins,
+    refs: options.refs,
+    disabledFeatures: options.disabledFeatures,
+    depthLimit: options.depthLimit,
+    onParse: options.onParse,
+    onError: options.onError,
+    onDone: options.onDone
+  });
+  startStreamParse(ctx, source);
+  return destroyStreamParse.bind(null, ctx);
+}
+function fromJSON(source, options = {}) {
+  var _source$f;
+  const plugins = resolvePlugins(options.plugins);
+  const disabledFeatures = options.disabledFeatures || 0;
+  const sourceFeatures = (_source$f = source.f) !== null && _source$f !== void 0 ? _source$f : 127;
+  return deserializeTop(createVanillaDeserializerContext({
+    maxBase64Length: options.maxBase64Length,
+    plugins,
+    markedRefs: source.m,
+    features: sourceFeatures & ~disabledFeatures,
+    disabledFeatures
+  }), source.t);
 }
 // @__NO_SIDE_EFFECTS__
 function makeSerovalPlugin(serializationAdapter) {
-  return /* @__PURE__ */ ai({
+  return /* @__PURE__ */ createPlugin({
     tag: "$TSR/t/" + serializationAdapter.key,
     test: serializationAdapter.test,
     parse: {
-      sync(value, ctx, _data) {
+      sync(value, ctx) {
         return { v: ctx.parse(serializationAdapter.toSerializable(value)) };
       },
-      async async(value, ctx, _data) {
+      async async(value, ctx) {
         return { v: await ctx.parse(serializationAdapter.toSerializable(value)) };
       },
-      stream(value, ctx, _data) {
+      stream(value, ctx) {
         return { v: ctx.parse(serializationAdapter.toSerializable(value)) };
       }
     },
     serialize: void 0,
-    deserialize(node, ctx, _data) {
+    deserialize(node, ctx) {
       return serializationAdapter.fromSerializable(ctx.deserialize(node.v));
     }
   });
@@ -2781,346 +3804,24 @@ var RawStream = class {
     this.hint = options?.hint ?? "binary";
   }
 };
-const BufferCtor = globalThis.Buffer;
-const hasNodeBuffer = !!BufferCtor && typeof BufferCtor.from === "function";
-function uint8ArrayToBase64(bytes) {
-  if (bytes.length === 0) return "";
-  if (hasNodeBuffer) return BufferCtor.from(bytes).toString("base64");
-  const CHUNK_SIZE = 32768;
-  const chunks = [];
-  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
-    chunks.push(String.fromCharCode.apply(null, chunk));
-  }
-  return btoa(chunks.join(""));
-}
-function base64ToUint8Array(base64) {
-  if (base64.length === 0) return new Uint8Array(0);
-  if (hasNodeBuffer) {
-    const buf = BufferCtor.from(base64, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-  }
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-const RAW_STREAM_FACTORY_BINARY = /* @__PURE__ */ Object.create(null);
-const RAW_STREAM_FACTORY_TEXT = /* @__PURE__ */ Object.create(null);
-const RAW_STREAM_FACTORY_CONSTRUCTOR_BINARY = (stream) => new ReadableStream({ start(controller) {
-  stream.on({
-    next(base64) {
-      try {
-        controller.enqueue(base64ToUint8Array(base64));
-      } catch {
-      }
-    },
-    throw(error) {
-      controller.error(error);
-    },
-    return() {
-      try {
-        controller.close();
-      } catch {
-      }
-    }
-  });
-} });
-const textEncoderForFactory = new TextEncoder();
-const RAW_STREAM_FACTORY_CONSTRUCTOR_TEXT = (stream) => {
-  return new ReadableStream({ start(controller) {
-    stream.on({
-      next(value) {
-        try {
-          if (typeof value === "string") controller.enqueue(textEncoderForFactory.encode(value));
-          else controller.enqueue(base64ToUint8Array(value.$b64));
-        } catch {
-        }
-      },
-      throw(error) {
-        controller.error(error);
-      },
-      return() {
-        try {
-          controller.close();
-        } catch {
-        }
-      }
-    });
-  } });
-};
-const FACTORY_BINARY = `(s=>new ReadableStream({start(c){s.on({next(b){try{const d=atob(b),a=new Uint8Array(d.length);for(let i=0;i<d.length;i++)a[i]=d.charCodeAt(i);c.enqueue(a)}catch(_){}},throw(e){c.error(e)},return(){try{c.close()}catch(_){}}})}}))`;
-const FACTORY_TEXT = `(s=>{const e=new TextEncoder();return new ReadableStream({start(c){s.on({next(v){try{if(typeof v==='string'){c.enqueue(e.encode(v))}else{const d=atob(v.$b64),a=new Uint8Array(d.length);for(let i=0;i<d.length;i++)a[i]=d.charCodeAt(i);c.enqueue(a)}}catch(_){}},throw(x){c.error(x)},return(){try{c.close()}catch(_){}}})}})})`;
-function toBinaryStream(readable) {
-  const stream = re();
-  const reader = readable.getReader();
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          stream.return(void 0);
-          break;
-        }
-        stream.next(uint8ArrayToBase64(value));
-      }
-    } catch (error) {
-      stream.throw(error);
-    } finally {
-      reader.releaseLock();
-    }
-  })();
-  return stream;
-}
-function toTextStream(readable) {
-  const stream = re();
-  const reader = readable.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  (async () => {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          try {
-            const remaining = decoder.decode();
-            if (remaining.length > 0) stream.next(remaining);
-          } catch {
-          }
-          stream.return(void 0);
-          break;
-        }
-        try {
-          const text = decoder.decode(value, { stream: true });
-          if (text.length > 0) stream.next(text);
-        } catch {
-          stream.next({ $b64: uint8ArrayToBase64(value) });
-        }
-      }
-    } catch (error) {
-      stream.throw(error);
-    } finally {
-      reader.releaseLock();
-    }
-  })();
-  return stream;
-}
-const RawStreamSSRPlugin = /* @__PURE__ */ ai({
-  tag: "tss/RawStream",
-  extends: [/* @__PURE__ */ ai({
-    tag: "tss/RawStreamFactory",
-    test(value) {
-      return value === RAW_STREAM_FACTORY_BINARY;
-    },
-    parse: {
-      sync(_value, _ctx, _data) {
-        return {};
-      },
-      async async(_value, _ctx, _data) {
-        return {};
-      },
-      stream(_value, _ctx, _data) {
-        return {};
-      }
-    },
-    serialize(_node, _ctx, _data) {
-      return FACTORY_BINARY;
-    },
-    deserialize(_node, _ctx, _data) {
-      return RAW_STREAM_FACTORY_BINARY;
-    }
-  }), /* @__PURE__ */ ai({
-    tag: "tss/RawStreamFactoryText",
-    test(value) {
-      return value === RAW_STREAM_FACTORY_TEXT;
-    },
-    parse: {
-      sync(_value, _ctx, _data) {
-        return {};
-      },
-      async async(_value, _ctx, _data) {
-        return {};
-      },
-      stream(_value, _ctx, _data) {
-        return {};
-      }
-    },
-    serialize(_node, _ctx, _data) {
-      return FACTORY_TEXT;
-    },
-    deserialize(_node, _ctx, _data) {
-      return RAW_STREAM_FACTORY_TEXT;
-    }
-  })],
-  test(value) {
-    return value instanceof RawStream;
-  },
-  parse: {
-    sync(value, ctx, _data) {
-      const factory = value.hint === "text" ? RAW_STREAM_FACTORY_TEXT : RAW_STREAM_FACTORY_BINARY;
-      return {
-        hint: ctx.parse(value.hint),
-        factory: ctx.parse(factory),
-        stream: ctx.parse(re())
-      };
-    },
-    async async(value, ctx, _data) {
-      const factory = value.hint === "text" ? RAW_STREAM_FACTORY_TEXT : RAW_STREAM_FACTORY_BINARY;
-      const encodedStream = value.hint === "text" ? toTextStream(value.stream) : toBinaryStream(value.stream);
-      return {
-        hint: await ctx.parse(value.hint),
-        factory: await ctx.parse(factory),
-        stream: await ctx.parse(encodedStream)
-      };
-    },
-    stream(value, ctx, _data) {
-      const factory = value.hint === "text" ? RAW_STREAM_FACTORY_TEXT : RAW_STREAM_FACTORY_BINARY;
-      const encodedStream = value.hint === "text" ? toTextStream(value.stream) : toBinaryStream(value.stream);
-      return {
-        hint: ctx.parse(value.hint),
-        factory: ctx.parse(factory),
-        stream: ctx.parse(encodedStream)
-      };
-    }
-  },
-  serialize(node, ctx, _data) {
-    return "(" + ctx.serialize(node.factory) + ")(" + ctx.serialize(node.stream) + ")";
-  },
-  deserialize(node, ctx, _data) {
-    const stream = ctx.deserialize(node.stream);
-    return ctx.deserialize(node.hint) === "text" ? RAW_STREAM_FACTORY_CONSTRUCTOR_TEXT(stream) : RAW_STREAM_FACTORY_CONSTRUCTOR_BINARY(stream);
-  }
-});
-// @__NO_SIDE_EFFECTS__
-function createRawStreamRPCPlugin(onRawStream) {
-  let nextStreamId = 1;
-  return /* @__PURE__ */ ai({
-    tag: "tss/RawStream",
-    test(value) {
-      return value instanceof RawStream;
-    },
-    parse: {
-      async async(value, ctx, _data) {
-        const streamId = nextStreamId++;
-        onRawStream(streamId, value.stream);
-        return { streamId: await ctx.parse(streamId) };
-      },
-      stream(value, ctx, _data) {
-        const streamId = nextStreamId++;
-        onRawStream(streamId, value.stream);
-        return { streamId: ctx.parse(streamId) };
-      }
-    },
-    serialize() {
-      throw new Error("RawStreamRPCPlugin.serialize should not be called. RPC uses JSON serialization, not JS code generation.");
-    },
-    deserialize() {
-      throw new Error("RawStreamRPCPlugin.deserialize should not be called. Use createRawStreamDeserializePlugin on client.");
-    }
-  });
-}
-const ShallowErrorPlugin = /* @__PURE__ */ ai({
-  tag: "$TSR/Error",
-  test(value) {
-    return value instanceof Error;
-  },
-  parse: {
-    sync(value, ctx) {
-      return { message: ctx.parse(value.message) };
-    },
-    async async(value, ctx) {
-      return { message: await ctx.parse(value.message) };
-    },
-    stream(value, ctx) {
-      return { message: ctx.parse(value.message) };
-    }
-  },
-  serialize(node, ctx) {
-    return "new Error(" + ctx.serialize(node.message) + ")";
-  },
-  deserialize(node, ctx) {
-    return new Error(ctx.deserialize(node.message));
-  }
-});
-var n = {}, P = (e) => new ReadableStream({ start: (r) => {
-  e.on({ next: (a) => {
-    try {
-      r.enqueue(a);
-    } catch (t) {
-    }
-  }, throw: (a) => {
-    r.error(a);
-  }, return: () => {
-    try {
-      r.close();
-    } catch (a) {
-    }
-  } });
-} }), x2 = ai({ tag: "seroval-plugins/web/ReadableStreamFactory", test(e) {
-  return e === n;
-}, parse: { sync() {
-  return n;
-}, async async() {
-  return await Promise.resolve(n);
-}, stream() {
-  return n;
-} }, serialize() {
-  return P.toString();
-}, deserialize() {
-  return n;
-} });
-function w(e) {
-  let r = re(), a = e.getReader();
-  async function t() {
-    try {
-      let s = await a.read();
-      s.done ? r.return(s.value) : (r.next(s.value), await t());
-    } catch (s) {
-      r.throw(s);
-    }
-  }
-  return t().catch(() => {
-  }), r;
-}
-var ee = ai({ tag: "seroval/plugins/web/ReadableStream", extends: [x2], test(e) {
-  return typeof ReadableStream == "undefined" ? false : e instanceof ReadableStream;
-}, parse: { sync(e, r) {
-  return { factory: r.parse(n), stream: r.parse(re()) };
-}, async async(e, r) {
-  return { factory: await r.parse(n), stream: await r.parse(w(e)) };
-}, stream(e, r) {
-  return { factory: r.parse(n), stream: r.parse(w(e)) };
-} }, serialize(e, r) {
-  return "(" + r.serialize(e.factory) + ")(" + r.serialize(e.stream) + ")";
-}, deserialize(e, r) {
-  let a = r.deserialize(e.stream);
-  return P(a);
-} }), p = ee;
-const defaultSerovalPlugins = [
-  ShallowErrorPlugin,
-  RawStreamSSRPlugin,
-  p
-];
 async function getStartManifest(matchedRoutes) {
-  const { tsrStartManifest } = await import("./assets/_tanstack-start-manifest_v-DJXHsqAW.js");
+  const { tsrStartManifest } = await import("./assets/_tanstack-start-manifest_v-BsPou0yv.js");
   const startManifest = tsrStartManifest();
   let routes = startManifest.routes;
   routes[rootRouteId];
   const manifestRoutes = {};
-  for (const k2 in routes) {
-    const v2 = routes[k2];
+  for (const k in routes) {
+    const v = routes[k];
     const result = {};
-    if (v2.preloads && v2.preloads.length > 0) result.preloads = v2.preloads;
-    if (v2.scripts && v2.scripts.length > 0) result.scripts = v2.scripts;
-    if (v2.css?.length) result.css = v2.css;
-    if (result.preloads || result.scripts || result.css) manifestRoutes[k2] = result;
+    if (v.preloads && v.preloads.length > 0) result.preloads = v.preloads;
+    if (v.scripts && v.scripts.length > 0) result.scripts = v.scripts;
+    if (v.css?.length) result.css = v.css;
+    if (result.preloads || result.scripts || result.css) manifestRoutes[k] = result;
   }
   return {
-    manifest: {
-      ...startManifest.scriptFormat ? { scriptFormat: startManifest.scriptFormat } : {},
-      ...startManifest.inlineCss ? { inlineCss: startManifest.inlineCss } : {},
-      routes: manifestRoutes
-    },
-    clientEntry: startManifest.clientEntry
+    ...startManifest.scriptFormat ? { scriptFormat: startManifest.scriptFormat } : {},
+    ...startManifest.inlineCss ? { inlineCss: startManifest.inlineCss } : {},
+    routes: manifestRoutes
   };
 }
 const manifest = {};
@@ -3129,7 +3830,7 @@ async function getServerFnById(id, access) {
   if (!serverFnInfo) {
     throw new Error("Server function info not found for " + id);
   }
-  const fnModule = serverFnInfo.module ?? await serverFnInfo.importer();
+  const fnModule = serverFnInfo.module ??= await serverFnInfo.importer();
   if (!fnModule) {
     throw new Error("Server function module not resolved for " + id);
   }
@@ -3144,43 +3845,20 @@ var TSS_SERVER_FUNCTION = /* @__PURE__ */ Symbol.for("TSS_SERVER_FUNCTION");
 var X_TSS_SERIALIZED = "x-tss-serialized";
 var X_TSS_RAW_RESPONSE = "x-tss-raw";
 var TSS_CONTENT_TYPE_FRAMED = "application/x-tss-framed";
-var FrameType = {
-  /** Seroval JSON chunk (NDJSON line) */
-  JSON: 0,
-  /** Raw stream data chunk */
-  CHUNK: 1,
-  /** Raw stream end (EOF) */
-  END: 2,
-  /** Raw stream error */
-  ERROR: 3
-};
+var FRAME_TYPE_JSON = 0;
+var FRAME_TYPE_CHUNK = 1;
+var FRAME_TYPE_END = 2;
+var FRAME_TYPE_ERROR = 3;
 var FRAME_HEADER_SIZE = 9;
+var MAX_FRAME_PAYLOAD_SIZE = 16 * 1024 * 1024;
+var MAX_FRAMED_STREAMS = 1024;
 var TSS_CONTENT_TYPE_FRAMED_VERSIONED = `${TSS_CONTENT_TYPE_FRAMED}; v=1`;
-function isSafeKey(key) {
-  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
-}
-function safeObjectMerge(target, source) {
-  const result = /* @__PURE__ */ Object.create(null);
-  if (target) {
-    for (const key of Object.keys(target)) if (isSafeKey(key)) result[key] = target[key];
-  }
-  if (source && typeof source === "object") {
-    for (const key of Object.keys(source)) if (isSafeKey(key)) result[key] = source[key];
-  }
-  return result;
-}
-function createNullProtoObject(source) {
-  if (!source) return /* @__PURE__ */ Object.create(null);
-  const obj = /* @__PURE__ */ Object.create(null);
-  for (const key of Object.keys(source)) if (isSafeKey(key)) obj[key] = source[key];
-  return obj;
-}
 var GLOBAL_STORAGE_KEY = /* @__PURE__ */ Symbol.for("tanstack-start:start-storage-context");
 var globalObj = globalThis;
 if (!globalObj[GLOBAL_STORAGE_KEY]) globalObj[GLOBAL_STORAGE_KEY] = new AsyncLocalStorage();
 var startStorage = globalObj[GLOBAL_STORAGE_KEY];
-async function runWithStartContext(context, fn2) {
-  return startStorage.run(context, fn2);
+async function runWithStartContext(context, fn) {
+  return startStorage.run(context, fn);
 }
 function getStartContext(opts) {
   const context = startStorage.getStore();
@@ -3189,7 +3867,7 @@ function getStartContext(opts) {
 }
 var getStartOptions = () => getStartContext().startOptions;
 function splitSetCookieString(cookiesString) {
-  if (Array.isArray(cookiesString)) return cookiesString.flatMap((c2) => splitSetCookieString(c2));
+  if (Array.isArray(cookiesString)) return cookiesString.flatMap((c) => splitSetCookieString(c));
   if (typeof cookiesString !== "string") return [];
   const cookiesStrings = [];
   let pos = 0;
@@ -3244,19 +3922,506 @@ function mergeHeaders(...headers) {
     return acc;
   }, new Headers());
 }
-function dehydrateSsrMatchId(id) {
-  return id.replaceAll("/", "\0");
+const ShallowErrorPlugin = /* @__PURE__ */ createPlugin({
+  tag: "$TSR/Error",
+  test(value) {
+    return value instanceof Error;
+  },
+  parse: {
+    sync(value, ctx) {
+      return { message: ctx.parse(value.message) };
+    },
+    async async(value, ctx) {
+      return { message: await ctx.parse(value.message) };
+    },
+    stream(value, ctx) {
+      return { message: ctx.parse(value.message) };
+    }
+  },
+  serialize(node, ctx) {
+    return "new Error(" + ctx.serialize(node.message) + ")";
+  },
+  deserialize(node, ctx) {
+    return new Error(ctx.deserialize(node.message));
+  }
+});
+function toBase64(bytes) {
+  const chunks = [];
+  for (let i = 0; i < bytes.length; i += 32768) chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 32768)));
+  return btoa(chunks.join(""));
+}
+function fromBase64(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+const textDecoder = /* @__PURE__ */ new TextDecoder("utf-8", {
+  fatal: true,
+  ignoreBOM: true
+});
+function encodeText(value) {
+  try {
+    return "t" + textDecoder.decode(value);
+  } catch {
+    return "b" + toBase64(value);
+  }
+}
+const textEncoder$3 = /* @__PURE__ */ new TextEncoder();
+function decodeText(value) {
+  const data = value.slice(1);
+  return value[0] === "t" ? textEncoder$3.encode(data) : fromBase64(data);
+}
+function pumpEncodedStream(readable, encode, signal) {
+  const stream = createStream();
+  const reader = readable.getReader();
+  let active = true;
+  const release = () => {
+    active = false;
+    reader.releaseLock();
+  };
+  const stop = (reason) => {
+    if (!active) return false;
+    reader.cancel(reason).catch(() => {
+    });
+    release();
+    return true;
+  };
+  (async () => {
+    try {
+      while (active) {
+        const { done, value } = await reader.read();
+        if (!active) return;
+        if (done) {
+          release();
+          stream.return(void 0);
+          return;
+        }
+        stream.next(encode(value));
+      }
+    } catch (error) {
+      if (stop(error)) stream.throw(error);
+    }
+  })();
+  return [stream, stop];
+}
+function fromEncodedStream(source, decode) {
+  let unsubscribe;
+  let done = false;
+  return new ReadableStream({
+    start(controller) {
+      const dispose = source.on({
+        next(value) {
+          if (done) return;
+          try {
+            controller.enqueue(decode(value));
+          } catch (error) {
+            done = true;
+            const stop = unsubscribe;
+            unsubscribe = void 0;
+            stop?.();
+            controller.error(error);
+          }
+        },
+        throw(error) {
+          if (!done) {
+            done = true;
+            unsubscribe = void 0;
+            controller.error(error);
+          }
+        },
+        return() {
+          if (!done) {
+            done = true;
+            unsubscribe = void 0;
+            controller.close();
+          }
+        }
+      });
+      if (done) dispose();
+      else unsubscribe = dispose;
+    },
+    cancel() {
+      const dispose = unsubscribe;
+      unsubscribe = void 0;
+      dispose?.();
+    }
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function createRawStreamJSONPlugin(signal) {
+  return /* @__PURE__ */ createPlugin({
+    tag: "tss/RawStream",
+    test: (value) => value instanceof RawStream,
+    parse: { async: async (value, ctx) => {
+      const text = await ctx.parse(value.hint === "text");
+      const [stream] = pumpEncodedStream(value.stream, value.hint === "text" ? encodeText : toBase64);
+      return {
+        text,
+        stream: await ctx.parse(stream)
+      };
+    } },
+    serialize: void 0,
+    deserialize: void 0
+  });
+}
+const RawStreamJSONPlugin = /* @__PURE__ */ createRawStreamJSONPlugin();
+const RawStreamJSONDeserializePlugin = /* @__PURE__ */ createPlugin({
+  tag: "tss/RawStream",
+  test: () => false,
+  parse: {},
+  serialize: void 0,
+  deserialize(node, ctx) {
+    return fromEncodedStream(ctx.deserialize(node.stream), ctx.deserialize(node.text) ? decodeText : fromBase64);
+  }
+});
+const READABLE_STREAM_FACTORY = {};
+const READABLE_STREAM_FACTORY_CONSTRUCTOR = (stream) => new ReadableStream({ start(controller) {
+  stream.on({
+    next(value) {
+      try {
+        controller.enqueue(value);
+      } catch (_error) {
+      }
+    },
+    throw(value) {
+      controller.error(value);
+    },
+    return() {
+      try {
+        controller.close();
+      } catch (_error) {
+      }
+    }
+  });
+} });
+const ReadableStreamFactoryPlugin = /* @__PURE__ */ createPlugin({
+  tag: "seroval-plugins/web/ReadableStreamFactory",
+  test(value) {
+    return value === READABLE_STREAM_FACTORY;
+  },
+  parse: {
+    sync() {
+      return READABLE_STREAM_FACTORY;
+    },
+    async async() {
+      return await Promise.resolve(READABLE_STREAM_FACTORY);
+    },
+    stream() {
+      return READABLE_STREAM_FACTORY;
+    }
+  },
+  serialize() {
+    return READABLE_STREAM_FACTORY_CONSTRUCTOR.toString();
+  },
+  deserialize() {
+    return READABLE_STREAM_FACTORY;
+  }
+});
+async function drainStream(stream, reader) {
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        stream.return(result.value);
+        reader.releaseLock();
+        break;
+      }
+      stream.next(result.value);
+    }
+  } catch (error) {
+    reader.releaseLock();
+    stream.throw(error);
+  }
+}
+function cleanupStream(reader) {
+  reader.cancel().catch(() => {
+  });
+  reader.releaseLock();
+}
+function toStream(value) {
+  const stream = createStream();
+  const reader = value.getReader();
+  const cleanup = cleanupStream.bind(null, reader);
+  drainStream(stream, reader).catch(cleanup);
+  return [stream, cleanup];
+}
+const ReadableStreamPlugin = /* @__PURE__ */ createPlugin({
+  tag: "seroval/plugins/web/ReadableStream",
+  extends: [ReadableStreamFactoryPlugin],
+  test(value) {
+    if (typeof ReadableStream === "undefined") return false;
+    return value instanceof ReadableStream;
+  },
+  parse: {
+    sync(_value, ctx) {
+      return {
+        factory: ctx.parse(READABLE_STREAM_FACTORY),
+        stream: ctx.parse(createStream())
+      };
+    },
+    async async(value, ctx) {
+      return {
+        factory: await ctx.parse(READABLE_STREAM_FACTORY),
+        stream: await ctx.parse(toStream(value)[0])
+      };
+    },
+    stream(value, ctx) {
+      const [stream, cleanup] = toStream(value);
+      ctx.addCleanup(cleanup);
+      return {
+        factory: ctx.parse(READABLE_STREAM_FACTORY),
+        stream: ctx.parse(stream)
+      };
+    }
+  },
+  serialize(node, ctx) {
+    return "(" + ctx.serialize(node.factory) + ")(" + ctx.serialize(node.stream) + ")";
+  },
+  deserialize(node, ctx) {
+    const stream = ctx.deserialize(node.stream);
+    if (!stream || typeof stream !== "object" || !isStream(stream)) throw new Error("Expected a stream source.");
+    return READABLE_STREAM_FACTORY_CONSTRUCTOR(stream);
+  }
+});
+// @__NO_SIDE_EFFECTS__
+function createDefaultSerovalPlugins(signal) {
+  return [
+    ShallowErrorPlugin,
+    RawStreamJSONPlugin,
+    ReadableStreamPlugin
+  ];
+}
+const defaultSerovalPlugins = /* @__PURE__ */ createDefaultSerovalPlugins();
+const defaultSerovalDeserializerPlugins = [RawStreamJSONDeserializePlugin, ...defaultSerovalPlugins];
+// @__NO_SIDE_EFFECTS__
+function createRawStreamRPCPlugin(onRawStream) {
+  let nextStreamId = 1;
+  return /* @__PURE__ */ createPlugin({
+    tag: "tss/RawStream",
+    test(value) {
+      return value instanceof RawStream;
+    },
+    parse: { stream(value, ctx) {
+      const streamId = nextStreamId++;
+      onRawStream(streamId, value.stream);
+      return { streamId: ctx.parse(streamId) };
+    } },
+    serialize: void 0,
+    deserialize: void 0
+  });
+}
+function getSerovalPlugins(routerPlugins) {
+  return [...getStartOptions()?.serializationAdapters?.map(makeSerovalPlugin) ?? [], ...routerPlugins];
+}
+var textEncoder$2 = new TextEncoder();
+var EMPTY_PAYLOAD = new Uint8Array(0);
+var MAX_ERROR_MESSAGE_CODE_UNITS = 4096;
+function encodeFrame(type, streamId, payload) {
+  if (payload.byteLength > MAX_FRAME_PAYLOAD_SIZE) throw new RangeError(`Frame payload exceeds ${MAX_FRAME_PAYLOAD_SIZE} bytes`);
+  const frame = new Uint8Array(FRAME_HEADER_SIZE + payload.length);
+  frame[0] = type;
+  frame[1] = streamId >>> 24 & 255;
+  frame[2] = streamId >>> 16 & 255;
+  frame[3] = streamId >>> 8 & 255;
+  frame[4] = streamId & 255;
+  frame[5] = payload.length >>> 24 & 255;
+  frame[6] = payload.length >>> 16 & 255;
+  frame[7] = payload.length >>> 8 & 255;
+  frame[8] = payload.length & 255;
+  frame.set(payload, FRAME_HEADER_SIZE);
+  return frame;
+}
+function encodeErrorPayload(error) {
+  const originalMessage = error instanceof Error ? error.message : String(error ?? "Unknown error");
+  const message = originalMessage.length > MAX_ERROR_MESSAGE_CODE_UNITS ? `${originalMessage.slice(0, MAX_ERROR_MESSAGE_CODE_UNITS)}…` : originalMessage;
+  return textEncoder$2.encode(message);
+}
+function createMultiplexedStream(recordStream, options = {}) {
+  let controller;
+  let stopped = false;
+  let activePumps = 0;
+  let wakeDemand;
+  let admission;
+  const readers = /* @__PURE__ */ new Set();
+  const pendingRawStreams = /* @__PURE__ */ new Set();
+  const abortOutput = () => errorOutput(options.signal?.reason);
+  const wakeAdmission = () => {
+    const wake = wakeDemand;
+    wakeDemand = void 0;
+    wake?.();
+  };
+  const cancelReader = (reader, reason) => {
+    reader.cancel(reason).catch(() => {
+    });
+  };
+  const cancelStream = (stream, reason) => {
+    stream.cancel(reason).catch(() => {
+    });
+  };
+  const stop = (reason) => {
+    if (stopped) return false;
+    stopped = [reason];
+    options.signal?.removeEventListener("abort", abortOutput);
+    wakeAdmission();
+    for (const reader of readers) cancelReader(reader, reason);
+    for (const stream of pendingRawStreams) cancelStream(stream, reason);
+    pendingRawStreams.clear();
+    return true;
+  };
+  const errorOutput = (error) => {
+    if (!stop(error)) return;
+    try {
+      controller.error(error);
+    } catch {
+    }
+  };
+  const waitForDemand = async () => {
+    while (!stopped && (controller.desiredSize ?? 0) <= 0) await new Promise((resolve) => {
+      wakeDemand = resolve;
+    });
+    return !stopped;
+  };
+  const admitFrame = (type, streamId, payload) => {
+    if (stopped) return false;
+    if (!admission && (controller.desiredSize ?? 0) > 0) {
+      controller.enqueue(encodeFrame(type, streamId, payload));
+      return true;
+    }
+    const runAdmission = async () => {
+      if (!await waitForDemand()) return false;
+      controller.enqueue(encodeFrame(type, streamId, payload));
+      return true;
+    };
+    const result = admission ? admission.then(runAdmission) : runAdmission();
+    const clearAdmission = () => {
+      if (admission === tail) admission = void 0;
+    };
+    const tail = result.then(clearAdmission, clearAdmission);
+    admission = tail;
+    return result;
+  };
+  const maybeClose = () => {
+    if (activePumps !== 0 || !stop()) return;
+    try {
+      controller.close();
+    } catch {
+    }
+  };
+  const startPump = (pump) => {
+    activePumps++;
+    pump().then(() => {
+      activePumps--;
+      maybeClose();
+    }, (error) => {
+      activePumps--;
+      errorOutput(error);
+    });
+  };
+  async function pumpRawStream(streamId, stream) {
+    const reader = stream.getReader();
+    readers.add(reader);
+    try {
+      while (!stopped) {
+        const { done, value } = await reader.read();
+        if (stopped) return;
+        if (done) {
+          const frameAdmission = admitFrame(FRAME_TYPE_END, streamId, EMPTY_PAYLOAD);
+          if (frameAdmission !== true) await frameAdmission;
+          return;
+        }
+        if (!(value instanceof Uint8Array)) throw new TypeError("RawStream chunks must be Uint8Array");
+        let offset = 0;
+        do {
+          const frameAdmission = admitFrame(FRAME_TYPE_CHUNK, streamId, value.byteLength <= MAX_FRAME_PAYLOAD_SIZE ? value : value.subarray(offset, offset + MAX_FRAME_PAYLOAD_SIZE));
+          if (frameAdmission !== true && (frameAdmission === false || !await frameAdmission)) return;
+          offset += MAX_FRAME_PAYLOAD_SIZE;
+        } while (offset < value.byteLength);
+      }
+    } catch (error) {
+      if (!stopped) {
+        const frameAdmission = admitFrame(FRAME_TYPE_ERROR, streamId, encodeErrorPayload(error));
+        if (frameAdmission !== true) await frameAdmission;
+      }
+    } finally {
+      readers.delete(reader);
+      reader.releaseLock();
+    }
+  }
+  async function pumpRecords() {
+    const reader = recordStream.getReader();
+    readers.add(reader);
+    try {
+      while (!stopped) {
+        const { done, value } = await reader.read();
+        if (stopped) {
+          if (!done) for (const registration of value.rawStreams) cancelStream(registration.stream, stopped[0]);
+          return;
+        }
+        if (done) return;
+        for (const registration of value.rawStreams) pendingRawStreams.add(registration.stream);
+        const frameAdmission = admitFrame(FRAME_TYPE_JSON, 0, value.json);
+        if (frameAdmission !== true && (frameAdmission === false || !await frameAdmission)) return;
+        for (const registration of value.rawStreams) {
+          pendingRawStreams.delete(registration.stream);
+          startPump(pumpRawStream.bind(void 0, registration.id, registration.stream));
+        }
+      }
+    } catch (error) {
+      if (!stopped) errorOutput(error);
+    } finally {
+      readers.delete(reader);
+      reader.releaseLock();
+    }
+  }
+  return new ReadableStream({
+    start(ctrl) {
+      controller = ctrl;
+      if (options.signal?.aborted) {
+        cancelStream(recordStream, options.signal.reason);
+        errorOutput(options.signal.reason);
+        return;
+      }
+      options.signal?.addEventListener("abort", abortOutput, { once: true });
+      startPump(pumpRecords);
+    },
+    pull() {
+      wakeAdmission();
+    },
+    cancel(reason) {
+      if (stop(reason)) options.onCancel?.(reason);
+    }
+  });
+}
+function isSafeKey(key) {
+  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
+}
+function safeObjectMerge(target, source) {
+  const result = /* @__PURE__ */ Object.create(null);
+  if (target) {
+    for (const key of Object.keys(target)) if (isSafeKey(key)) result[key] = target[key];
+  }
+  if (source && typeof source === "object") {
+    for (const key of Object.keys(source)) if (isSafeKey(key)) result[key] = source[key];
+  }
+  return result;
+}
+function createNullProtoObject(source) {
+  if (!source) return /* @__PURE__ */ Object.create(null);
+  const obj = /* @__PURE__ */ Object.create(null);
+  for (const key of Object.keys(source)) if (isSafeKey(key)) obj[key] = source[key];
+  return obj;
 }
 function flattenMiddlewares(middlewares, maxDepth = 100) {
   const seen = /* @__PURE__ */ new Set();
   const flattened = [];
   const recurse = (middleware, depth) => {
     if (depth > maxDepth) throw new Error(`Middleware nesting depth exceeded maximum of ${maxDepth}. Check for circular references.`);
-    middleware.forEach((m2) => {
-      if (m2.options.middleware) recurse(m2.options.middleware, depth + 1);
-      if (!seen.has(m2)) {
-        seen.add(m2);
-        flattened.push(m2);
+    middleware.forEach((m) => {
+      if (m.options.middleware) recurse(m.options.middleware, depth + 1);
+      if (!seen.has(m)) {
+        seen.add(m);
+        flattened.push(m);
       }
     });
   };
@@ -3268,14 +4433,19 @@ var createMiddleware = (options, __opts) => {
     type: "request",
     ...__opts || options
   };
+  const setValidator = (validator) => {
+    return createMiddleware({}, Object.assign(resolvedOptions, {
+      validator,
+      inputValidator: validator
+    }));
+  };
   return {
     options: resolvedOptions,
     middleware: (middleware) => {
       return createMiddleware({}, Object.assign(resolvedOptions, { middleware }));
     },
-    inputValidator: (inputValidator) => {
-      return createMiddleware({}, Object.assign(resolvedOptions, { inputValidator }));
-    },
+    validator: setValidator,
+    inputValidator: setValidator,
     client: (client) => {
       return createMiddleware({}, Object.assign(resolvedOptions, { client }));
     },
@@ -3340,138 +4510,876 @@ async function getFailureResponse(opts, ctx) {
     status: 403
   });
 }
-function getDefaultSerovalPlugins() {
-  return [...getStartOptions()?.serializationAdapters?.map(makeSerovalPlugin) ?? [], ...defaultSerovalPlugins];
-}
-var textEncoder = new TextEncoder();
-var EMPTY_PAYLOAD = new Uint8Array(0);
-function encodeFrame(type, streamId, payload) {
-  const frame = new Uint8Array(FRAME_HEADER_SIZE + payload.length);
-  frame[0] = type;
-  frame[1] = streamId >>> 24 & 255;
-  frame[2] = streamId >>> 16 & 255;
-  frame[3] = streamId >>> 8 & 255;
-  frame[4] = streamId & 255;
-  frame[5] = payload.length >>> 24 & 255;
-  frame[6] = payload.length >>> 16 & 255;
-  frame[7] = payload.length >>> 8 & 255;
-  frame[8] = payload.length & 255;
-  frame.set(payload, FRAME_HEADER_SIZE);
-  return frame;
-}
-function encodeJSONFrame(json) {
-  return encodeFrame(FrameType.JSON, 0, textEncoder.encode(json));
-}
-function encodeChunkFrame(streamId, chunk) {
-  return encodeFrame(FrameType.CHUNK, streamId, chunk);
-}
-function encodeEndFrame(streamId) {
-  return encodeFrame(FrameType.END, streamId, EMPTY_PAYLOAD);
-}
-function encodeErrorFrame(streamId, error) {
-  const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-  return encodeFrame(FrameType.ERROR, streamId, textEncoder.encode(message));
-}
-function createMultiplexedStream(jsonStream, rawStreams, lateStreamSource) {
-  let controller;
-  let cancelled = false;
-  const readers = [];
-  const enqueue = (frame) => {
-    if (cancelled) return false;
-    try {
-      controller.enqueue(frame);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  const errorOutput = (error) => {
-    if (cancelled) return;
-    cancelled = true;
-    try {
-      controller.error(error);
-    } catch {
-    }
-    for (const reader of readers) reader.cancel().catch(() => {
-    });
-  };
-  async function pumpRawStream(streamId, stream) {
-    const reader = stream.getReader();
-    readers.push(reader);
-    try {
-      while (!cancelled) {
-        const { done, value } = await reader.read();
-        if (done) {
-          enqueue(encodeEndFrame(streamId));
-          return;
-        }
-        if (!enqueue(encodeChunkFrame(streamId, value))) return;
-      }
-    } catch (error) {
-      enqueue(encodeErrorFrame(streamId, error));
-    } finally {
-      reader.releaseLock();
-    }
-  }
-  async function pumpJSON() {
-    const reader = jsonStream.getReader();
-    readers.push(reader);
-    try {
-      while (!cancelled) {
-        const { done, value } = await reader.read();
-        if (done) return;
-        if (!enqueue(encodeJSONFrame(value))) return;
-      }
-    } catch (error) {
-      errorOutput(error);
-      throw error;
-    } finally {
-      reader.releaseLock();
-    }
-  }
-  async function pumpLateStreams() {
-    if (!lateStreamSource) return [];
-    const lateStreamPumps = [];
-    const reader = lateStreamSource.getReader();
-    readers.push(reader);
-    try {
-      while (!cancelled) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        lateStreamPumps.push(pumpRawStream(value.id, value.stream));
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    return lateStreamPumps;
-  }
-  return new ReadableStream({
-    async start(ctrl) {
-      controller = ctrl;
-      const pumps = [pumpJSON()];
-      for (const [streamId, stream] of rawStreams) pumps.push(pumpRawStream(streamId, stream));
-      if (lateStreamSource) pumps.push(pumpLateStreams());
-      try {
-        const latePumps = (await Promise.all(pumps)).find(Array.isArray);
-        if (latePumps && latePumps.length > 0) await Promise.all(latePumps);
-        if (!cancelled) try {
-          controller.close();
-        } catch {
-        }
-      } catch {
-      }
+const GLOBAL_TSR = "$_TSR";
+// @__NO_SIDE_EFFECTS__
+function makeSsrSerovalPlugin(serializationAdapter, tracker) {
+  return /* @__PURE__ */ createPlugin({
+    tag: "$TSR/t/" + serializationAdapter.key,
+    test: serializationAdapter.test,
+    parse: { stream(value, ctx) {
+      return { v: ctx.parse(serializationAdapter.toSerializable(value)) };
+    } },
+    serialize(node, ctx) {
+      if (tracker) tracker.didRun = true;
+      return GLOBAL_TSR + '.t.get("' + serializationAdapter.key + '")(' + ctx.serialize(node.v) + ")";
     },
-    cancel() {
-      cancelled = true;
-      for (const reader of readers) reader.cancel().catch(() => {
-      });
-      readers.length = 0;
-    }
+    deserialize: void 0
   });
+}
+var tsrScript_default = "self.$_TSR={h(){this.hydrated=!0,this.c()},e(){this.streamEnded=!0,this.c()},c(){this.hydrated&&this.streamEnded&&(delete self.$_TSR,delete self.$R.tsr)},p(e){this.initialized?e():this.buffer.push(e)},buffer:[]}";
+const textEncoder$1 = new TextEncoder();
+const DOCUMENT_CLOSE = "</body></html>";
+const SCRIPT_CLOSE = "<\/script>";
+textEncoder$1.encode(DOCUMENT_CLOSE);
+textEncoder$1.encode(SCRIPT_CLOSE);
+function encodeIntoBoundedChunk(source, sourceOffset, output, outputOffset = 0) {
+  return textEncoder$1.encodeInto(sourceOffset === 0 ? source : source.slice(sourceOffset), outputOffset === 0 ? output : output.subarray(outputOffset));
+}
+const encoder = new TextEncoder();
+const SOURCE_SEPARATOR = ";";
+const MAX_INITIAL_SOURCE_CODE_UNITS = 16 * 1024;
+const MAX_BACKLOG_CODE_UNITS = 16 * 1024 * 1024;
+const MAX_BACKLOG_SOURCES = 4096;
+const MIN_OUTPUT_BYTES = 256;
+const MAX_DIRECT_CODE_UNITS = 16 * 1024;
+const MAX_HYDRATION_OUTPUT_CHUNK_BYTES = 64 * 1024;
+const MAX_DYNAMIC_RECORD_CODE_UNITS = MAX_HYDRATION_OUTPUT_CHUNK_BYTES;
+const STREAM_PART_ATTRIBUTE = "data-tsr-stream-part";
+const INITIAL_CLEANUP_SOURCE = `{let s=document.currentScript,p;while((p=s.previousElementSibling)&&p.hasAttribute('${STREAM_PART_ATTRIBUTE}'))p.remove();s.remove()}`;
+const INITIAL_CLEANUP_SUFFIX = SOURCE_SEPARATOR + INITIAL_CLEANUP_SOURCE;
+const DYNAMIC_CLOSE_SOURCE = "document.currentScript.remove()<\/script>";
+const HYDRATION_SCRIPT_BOUNDARY_SOURCE = "document.currentScript.remove();/*$tsr-stream-boundary*/";
+const HYDRATION_SCRIPT_BOUNDARY_SUFFIX = ";/*$tsr-stream-boundary*/<\/script>";
+encoder.encode(HYDRATION_SCRIPT_BOUNDARY_SUFFIX);
+const ROUTER_PREFIX = GLOBAL_TSR + ".router=";
+const PROMISE_PREFIX = GLOBAL_TSR + ".p(()=>";
+const DEFAULT_INITIAL_SOURCES = [getCrossReferenceHeader("tsr"), tsrScript_default];
+const HydrationScriptOutputState = {
+  Waiting: 0,
+  Ready: 1,
+  Active: 2,
+  Done: 3,
+  Failed: 4
+};
+function escapeAttribute(value) {
+  return value.replace(/[&"'<>]/g, (char) => `&#${char.charCodeAt(0)};`);
+}
+function createInitialTags(sources, nonce) {
+  const before = [];
+  for (const source of sources) {
+    if (!source) continue;
+    const previous = before[before.length - 1];
+    if (previous?.children && previous.children.length + 1 + source.length <= MAX_INITIAL_SOURCE_CODE_UNITS) previous.children += SOURCE_SEPARATOR + source;
+    else before.push({
+      tag: "script",
+      attrs: {
+        nonce,
+        [STREAM_PART_ATTRIBUTE]: ""
+      },
+      children: source
+    });
+  }
+  const lastHydrationTag = before[before.length - 1];
+  if (lastHydrationTag) {
+    const lastSource = lastHydrationTag.children;
+    if (lastSource.length + INITIAL_CLEANUP_SUFFIX.length <= MAX_INITIAL_SOURCE_CODE_UNITS) lastHydrationTag.children = lastSource + INITIAL_CLEANUP_SUFFIX;
+    else before.push({
+      tag: "script",
+      attrs: {
+        nonce,
+        [STREAM_PART_ATTRIBUTE]: ""
+      },
+      children: INITIAL_CLEANUP_SOURCE
+    });
+  }
+  return {
+    before,
+    boundary: {
+      tag: "script",
+      attrs: { nonce },
+      children: HYDRATION_SCRIPT_BOUNDARY_SOURCE
+    }
+  };
+}
+var HydrationScriptsOwner = class {
+  constructor(nonce, initialSources) {
+    this.nonce = nonce;
+    this.queuedSources = [];
+    this.queuedSourceHead = 0;
+    this.initialTaken = false;
+    this.barrierLifted = false;
+    this.producerDone = false;
+    this.retainedSources = 0;
+    this.regularCodeUnits = 0;
+    this.hasOversizedSource = false;
+    this.segmentIndex = 0;
+    this.closingSegmentIndex = 0;
+    this.source = "";
+    this.sourceOffset = 0;
+    this.outputCapacity = MIN_OUTPUT_BYTES;
+    this.outputState = HydrationScriptOutputState.Waiting;
+    this.takeInitialHydrationScriptTags = this.takeInitialHydrationScriptTags.bind(this);
+    const seedSources = initialSources ?? DEFAULT_INITIAL_SOURCES;
+    for (const seedSource of seedSources) {
+      if (!this.account(seedSource)) break;
+      this.queuedSources.push(seedSource);
+    }
+  }
+  get state() {
+    return this.outputState;
+  }
+  get error() {
+    return this.outputError;
+  }
+  notify() {
+    try {
+      this.listener?.();
+    } catch (listenerError) {
+      console.error("Hydration script output listener error:", listenerError);
+    }
+  }
+  refresh(notifyChange = true) {
+    const next = this.outputState === HydrationScriptOutputState.Failed ? HydrationScriptOutputState.Failed : this.active ? HydrationScriptOutputState.Active : typeof this.consumer === "object" && this.initialTaken && this.barrierLifted && !this.queueIsEmpty() ? HydrationScriptOutputState.Ready : this.producerDone && this.initialTaken && this.queueIsEmpty() ? HydrationScriptOutputState.Done : HydrationScriptOutputState.Waiting;
+    if (this.outputState !== next) {
+      this.outputState = next;
+      if (notifyChange) this.notify();
+    }
+  }
+  clearTimeoutIfSet() {
+    if (this.timeout !== void 0) {
+      clearTimeout(this.timeout);
+      this.timeout = void 0;
+    }
+  }
+  queueIsEmpty() {
+    return this.queuedSourceHead === this.queuedSources.length;
+  }
+  clearQueue() {
+    this.queuedSources = [];
+    this.queuedSourceHead = 0;
+  }
+  dropBufferedOutput() {
+    this.clearQueue();
+    this.active = void 0;
+    this.retainedSources = 0;
+    this.regularCodeUnits = 0;
+    this.hasOversizedSource = false;
+    this.segmentIndex = 0;
+    this.closingSegmentIndex = 0;
+    this.source = "";
+    this.sourceOffset = 0;
+    this.outputCapacity = MIN_OUTPUT_BYTES;
+    this.opening = void 0;
+  }
+  fail(reason) {
+    if (this.consumer === "cleaned" || this.outputState === HydrationScriptOutputState.Failed) return;
+    this.outputError = reason;
+    this.clearTimeoutIfSet();
+    this.dropBufferedOutput();
+    this.outputState = HydrationScriptOutputState.Failed;
+    this.notify();
+  }
+  rejectBacklog(kind) {
+    this.fail(/* @__PURE__ */ new Error(`SSR hydration backlog exceeded maximum ${kind} count`));
+    return false;
+  }
+  account(nextSource) {
+    if (this.retainedSources === MAX_BACKLOG_SOURCES) return this.rejectBacklog("source-part");
+    if (nextSource.length > MAX_BACKLOG_CODE_UNITS) {
+      if (this.hasOversizedSource) return this.rejectBacklog("code-unit");
+      this.hasOversizedSource = true;
+    } else if (this.regularCodeUnits + nextSource.length > MAX_BACKLOG_CODE_UNITS) return this.rejectBacklog("code-unit");
+    else this.regularCodeUnits += nextSource.length;
+    this.retainedSources++;
+    return true;
+  }
+  releaseSource(part) {
+    this.retainedSources--;
+    if (part.length > MAX_BACKLOG_CODE_UNITS) this.hasOversizedSource = false;
+    else this.regularCodeUnits -= part.length;
+  }
+  releaseAccounting(batch) {
+    for (const part of batch) if (part !== void 0) this.releaseSource(part);
+  }
+  liftBarrier() {
+    if (this.consumer !== "cleaned" && !this.barrierLifted) {
+      this.barrierLifted = true;
+      this.refresh();
+    }
+  }
+  producerCanWrite() {
+    return this.consumer !== "cleaned" && this.outputState !== HydrationScriptOutputState.Failed && !this.producerDone;
+  }
+  pushSource(nextSource) {
+    if (!this.producerCanWrite()) return false;
+    if (this.account(nextSource)) {
+      this.queuedSources.push(nextSource);
+      if (this.initialTaken) this.refresh();
+    } else return false;
+    return this.producerCanWrite();
+  }
+  takeQueuedBatch(batchLength) {
+    if (this.queuedSourceHead === 0 && batchLength === this.queuedSources.length) {
+      const batch2 = this.queuedSources;
+      this.clearQueue();
+      return batch2;
+    }
+    const end = this.queuedSourceHead + batchLength;
+    const batch = this.queuedSources.slice(this.queuedSourceHead, end);
+    for (let index = this.queuedSourceHead; index < end; index++) this.queuedSources[index] = void 0;
+    this.queuedSourceHead = end;
+    if (this.queueIsEmpty()) this.clearQueue();
+    else if (this.queuedSourceHead >= 1024 && this.queuedSourceHead >= this.queuedSources.length - this.queuedSourceHead) {
+      this.queuedSources = this.queuedSources.slice(this.queuedSourceHead);
+      this.queuedSourceHead = 0;
+    }
+    return batch;
+  }
+  release(batch) {
+    this.releaseAccounting(batch);
+    this.active = void 0;
+    this.source = "";
+    this.sourceOffset = 0;
+    this.refresh(false);
+  }
+  advanceSource() {
+    const batch = this.active;
+    if (this.segmentIndex > 0 && this.segmentIndex < this.closingSegmentIndex) {
+      const partIndex = this.segmentIndex - 1 >> 1;
+      if (this.segmentIndex % 2 === 1) {
+        const part = batch[partIndex];
+        if (part !== void 0) {
+          this.releaseSource(part);
+          batch[partIndex] = void 0;
+        }
+      }
+    }
+    this.segmentIndex++;
+    if (this.segmentIndex < this.closingSegmentIndex) {
+      const partIndex = this.segmentIndex - 1 >> 1;
+      this.source = this.segmentIndex % 2 === 1 ? batch[partIndex] : SOURCE_SEPARATOR;
+    } else if (this.segmentIndex === this.closingSegmentIndex) this.source = DYNAMIC_CLOSE_SOURCE;
+    else this.release(batch);
+    this.sourceOffset = 0;
+  }
+  pullActive() {
+    const bytes = new Uint8Array(this.outputCapacity);
+    let offset = 0;
+    while (this.active) if (this.sourceOffset === this.source.length) this.advanceSource();
+    else if (offset === bytes.length) break;
+    else {
+      const result = encodeIntoBoundedChunk(this.source, this.sourceOffset, bytes, offset);
+      if (result.read === 0) break;
+      this.sourceOffset += result.read;
+      offset += result.written;
+    }
+    if (offset === 0) throw new Error("SSR router script record produced no output");
+    if (offset === bytes.length) return bytes;
+    return offset * 2 < bytes.length ? bytes.slice(0, offset) : bytes.subarray(0, offset);
+  }
+  pullReady() {
+    const scriptOpening = this.opening ??= this.nonce ? `<script nonce="${escapeAttribute(this.nonce)}">` : "<script>";
+    let codeUnits = scriptOpening.length + 40;
+    let batchLength = 0;
+    for (let index = this.queuedSourceHead; index < this.queuedSources.length; index++) {
+      const part = this.queuedSources[index];
+      const nextCodeUnits = codeUnits + 1 + part.length;
+      if (batchLength > 0 && nextCodeUnits > MAX_DYNAMIC_RECORD_CODE_UNITS) break;
+      codeUnits = nextCodeUnits;
+      batchLength++;
+      if (codeUnits > MAX_DYNAMIC_RECORD_CODE_UNITS) break;
+    }
+    const batch = this.takeQueuedBatch(batchLength);
+    if (codeUnits <= MAX_DIRECT_CODE_UNITS) {
+      const joined = batch.length === 1 ? batch[0] : batch.join(SOURCE_SEPARATOR);
+      const bytes = encoder.encode(scriptOpening + joined + ";document.currentScript.remove()<\/script>");
+      this.release(batch);
+      return bytes;
+    }
+    this.active = batch;
+    this.segmentIndex = 0;
+    this.closingSegmentIndex = (batch.length << 1) + 1;
+    this.source = scriptOpening;
+    this.sourceOffset = 0;
+    this.outputCapacity = Math.max(MIN_OUTPUT_BYTES, Math.min(MAX_HYDRATION_OUTPUT_CHUNK_BYTES, codeUnits));
+    this.outputState = HydrationScriptOutputState.Active;
+    return this.pullActive();
+  }
+  pullChunk() {
+    if (this.outputState !== HydrationScriptOutputState.Ready && this.outputState !== HydrationScriptOutputState.Active) throw new Error("Hydration script output is not ready");
+    try {
+      return this.outputState === HydrationScriptOutputState.Ready ? this.pullReady() : this.pullActive();
+    } catch (cause) {
+      this.fail(cause);
+      throw cause;
+    }
+  }
+  subscribe(onChange) {
+    if (this.consumer === "cleaned") return () => {
+    };
+    if (this.listener) throw new Error("SSR hydration output already has a subscriber");
+    this.listener = onChange;
+    return () => {
+      if (this.listener === onChange) this.listener = void 0;
+    };
+  }
+  pushSerializedSource(data, initial, wrap) {
+    let serialized = initial ? ROUTER_PREFIX + data : data;
+    if (wrap) serialized = PROMISE_PREFIX + serialized + ")";
+    return this.pushSource(serialized);
+  }
+  finish() {
+    if (!this.pushSource("$_TSR.e()")) return;
+    this.producerDone = true;
+    this.clearTimeoutIfSet();
+    this.refresh();
+  }
+  takeInitialHydrationScriptTags() {
+    if (this.consumer === "cleaned" || this.outputState === HydrationScriptOutputState.Failed || this.initialTaken) return;
+    const sources = this.queuedSources;
+    const tags = createInitialTags(sources, this.nonce);
+    this.initialTaken = true;
+    this.releaseAccounting(sources);
+    sources.length = 0;
+    this.queuedSourceHead = 0;
+    this.refresh();
+    return tags;
+  }
+  /**
+  * Opt this request out of hydration output entirely (for example a
+  * `hydrate: false` page). Drops the queued bootstrap sources, marks the
+  * producer done, and makes the fast pass-through path reservable without
+  * a rendered `<Scripts>` boundary. Must run before the initial take and
+  * before serialization produces output.
+  */
+  disableHydration() {
+    if (this.consumer === "cleaned" || this.outputState === HydrationScriptOutputState.Failed) return;
+    if (this.initialTaken || this.consumer !== void 0 || this.producerDone) {
+      invariant();
+    }
+    this.releaseAccounting(this.queuedSources);
+    this.clearQueue();
+    this.initialTaken = true;
+    this.barrierLifted = true;
+    this.producerDone = true;
+    this.refresh();
+  }
+  isInitialTaken() {
+    return this.initialTaken;
+  }
+  skipInitialTake() {
+    if (this.consumer !== "cleaned" && !this.initialTaken) {
+      this.initialTaken = true;
+      this.refresh();
+    }
+  }
+  claimOutput() {
+    if (this.consumer === "cleaned") throw new Error("SSR hydration script output is already cleaned up");
+    if (this.consumer !== void 0) throw new Error("SSR hydration script output already has a consumer");
+    this.consumer = this;
+    this.refresh(false);
+    return this;
+  }
+  reserveFastPath(output) {
+    const ownsConsumer = this.consumer === output;
+    if (this.outputState === HydrationScriptOutputState.Failed || !this.producerDone || !this.initialTaken || !this.queueIsEmpty() || this.active || !ownsConsumer) return false;
+    this.consumer = "fast-path";
+    return true;
+  }
+  startSerializationTimeout(timeoutMs) {
+    if (this.consumer === "cleaned" || this.outputState === HydrationScriptOutputState.Failed || this.producerDone || this.timeout !== void 0) return;
+    this.timeout = setTimeout(() => {
+      this.timeout = void 0;
+      if (this.consumer !== "cleaned" && this.outputState !== HydrationScriptOutputState.Failed && !this.producerDone) {
+        console.error("Serialization timeout after app render finished");
+        this.fail(/* @__PURE__ */ new Error("Serialization timeout after app render finished"));
+      }
+    }, timeoutMs);
+  }
+  cleanup() {
+    if (this.consumer === "cleaned") return;
+    this.consumer = "cleaned";
+    this.clearTimeoutIfSet();
+    this.dropBufferedOutput();
+    this.listener = void 0;
+    this.outputError = void 0;
+    this.producerDone = true;
+    this.outputState = HydrationScriptOutputState.Done;
+  }
+};
+function createHydrationScripts(nonce, initialSources) {
+  return new HydrationScriptsOwner(nonce, initialSources);
+}
+const nodeBuffer = globalThis.Buffer;
+const toBase64Fast = nodeBuffer ? (bytes) => nodeBuffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64") : toBase64;
+const BINARY_FACTORY = () => {
+};
+const TEXT_FACTORY = () => {
+};
+const FACTORY_BINARY = `((s,u=1)=>new ReadableStream({start(c,f){f=s.on({next(b){const d=atob(b),a=new Uint8Array(d.length);for(let i=0;i<d.length;i++)a[i]=d.charCodeAt(i);c.enqueue(a)},throw(e){s=u=0;c.error(e)},return(){s=u=0;c.close()}});u=u&&f},cancel(){u&&u()}}))`;
+const FACTORY_TEXT = `((s,u=1,e=new TextEncoder)=>new ReadableStream({start(c,f){f=s.on({next(v){const x=v.slice(1);if(v[0]==='t')c.enqueue(e.encode(x));else{const d=atob(x),a=new Uint8Array(d.length);for(let i=0;i<d.length;i++)a[i]=d.charCodeAt(i);c.enqueue(a)}},throw(x){s=u=0;c.error(x)},return(){s=u=0;c.close()}});u=u&&f},cancel(){u&&u()}}))`;
+function makeFactoryPlugin(tag, sentinel, source) {
+  return createPlugin({
+    tag,
+    test(value) {
+      return value === sentinel;
+    },
+    parse: { stream() {
+      return {};
+    } },
+    serialize() {
+      return source;
+    },
+    deserialize: void 0
+  });
+}
+const RawStreamSSRPlugin = /* @__PURE__ */ createPlugin({
+  tag: "tss/RawStream",
+  extends: [/* @__PURE__ */ makeFactoryPlugin("tss/RawStreamFactory", BINARY_FACTORY, FACTORY_BINARY), /* @__PURE__ */ makeFactoryPlugin("tss/RawStreamFactoryText", TEXT_FACTORY, FACTORY_TEXT)],
+  test(value) {
+    return value instanceof RawStream;
+  },
+  parse: { stream(value, ctx) {
+    const text = value.hint === "text";
+    const factory = ctx.parse(text ? TEXT_FACTORY : BINARY_FACTORY);
+    const [stream, stop] = pumpEncodedStream(value.stream, text ? encodeText : toBase64Fast);
+    ctx.addCleanup(stop);
+    return {
+      factory,
+      stream: ctx.parse(stream)
+    };
+  } },
+  serialize(node, ctx) {
+    return "(" + ctx.serialize(node.factory) + ")(" + ctx.serialize(node.stream) + ")";
+  },
+  deserialize: void 0
+});
+const ssrSerovalPlugins = [
+  ShallowErrorPlugin,
+  RawStreamSSRPlugin,
+  ReadableStreamPlugin
+];
+function dehydrateMatch(match) {
+  const dehydratedMatch = {
+    i: dehydrateSsrMatchId(match.id),
+    u: match.updatedAt,
+    s: match.status
+  };
+  for (const [key, shorthand] of [
+    ["__beforeLoadContext", "b"],
+    ["loaderData", "l"],
+    ["error", "e"],
+    ["ssr", "ssr"]
+  ]) if (match[key] !== void 0) dehydratedMatch[shorthand] = match[key];
+  if (match._notFound) dehydratedMatch.g = true;
+  return dehydratedMatch;
+}
+function disposeSerializationSafely(dispose) {
+  try {
+    dispose?.();
+  } catch (err) {
+    console.error("Error disposing SSR serialization:", err);
+  }
+}
+function notifyAndClearListeners(listeners, errorMessage, arg) {
+  const pending = listeners.slice();
+  listeners.length = 0;
+  for (const listener of pending) try {
+    listener(arg);
+  } catch (error) {
+    console.error(errorMessage, error);
+  }
+}
+const MANIFEST_CACHE_SIZE = 100;
+const manifestCaches = /* @__PURE__ */ new WeakMap();
+function getManifestCache(manifest2) {
+  const cache = manifestCaches.get(manifest2);
+  if (cache) return cache;
+  const newCache = createSieveCache(MANIFEST_CACHE_SIZE);
+  manifestCaches.set(manifest2, newCache);
+  return newCache;
+}
+function getInlineCssForPreparedRoutes(manifest2, preparedRoutes) {
+  const styles = manifest2.inlineCss?.styles;
+  const hrefs = preparedRoutes.inlineCssHrefs;
+  if (!styles || !hrefs?.length) return;
+  let css = "";
+  for (const href of hrefs) css += styles[href];
+  return css;
+}
+function getInlineCssAssetForPreparedRoutes(manifest2, preparedRoutes) {
+  const css = getInlineCssForPreparedRoutes(manifest2, preparedRoutes);
+  return css === void 0 ? void 0 : createInlineCssStyleAsset(css);
+}
+function getMatchedRoutesCacheKey(matches) {
+  let cacheKey = "";
+  for (let i = 0; i < matches.length; i++) cacheKey += (i === 0 ? "" : "\0") + matches[i].routeId;
+  return cacheKey;
+}
+function getPreparedMatchedManifestRoutes(manifest2, matches, cacheKey) {
+  {
+    const cached = getManifestCache(manifest2).get(cacheKey);
+    if (cached) return cached;
+  }
+  const preparedRoutes = prepareMatchedManifestRoutes(manifest2, matches);
+  getManifestCache(manifest2).set(cacheKey, preparedRoutes);
+  return preparedRoutes;
+}
+function prepareMatchedManifestRoutes(manifest2, matches) {
+  const inlineStyles = manifest2.inlineCss?.styles;
+  const routes = {};
+  if (!inlineStyles) {
+    for (const match of matches) {
+      const route = manifest2.routes[match.routeId];
+      if (route) routes[match.routeId] = route;
+    }
+    return {
+      routes,
+      hasStrippedRoutes: false
+    };
+  }
+  const inlineCssHrefs = [];
+  const seenInlineCssHrefs = /* @__PURE__ */ new Set();
+  let hasStrippedRoutes = false;
+  for (const match of matches) {
+    const routeId = match.routeId;
+    const route = manifest2.routes[routeId];
+    if (!route) continue;
+    const nextRoute = stripInlinedStylesheetAssetsFromRoute(inlineStyles, route, inlineCssHrefs, seenInlineCssHrefs);
+    if (nextRoute !== route) hasStrippedRoutes = true;
+    routes[routeId] = nextRoute;
+  }
+  return {
+    routes,
+    hasStrippedRoutes,
+    ...inlineCssHrefs.length ? { inlineCssHrefs } : {}
+  };
+}
+function stripInlinedStylesheetAssetsFromRoute(inlineStyles, route, inlineCssHrefs, seenInlineCssHrefs) {
+  const css = route.css;
+  if (!css) return route;
+  if (css.length === 0) {
+    const nextRoute2 = { ...route };
+    delete nextRoute2.css;
+    return nextRoute2;
+  }
+  let cssLinks;
+  for (let i = 0; i < css.length; i++) {
+    const link = css[i];
+    const href = getStylesheetHref(link);
+    if (inlineStyles[href] === void 0) {
+      if (cssLinks) cssLinks.push(link);
+      continue;
+    }
+    if (!seenInlineCssHrefs.has(href)) {
+      seenInlineCssHrefs.add(href);
+      inlineCssHrefs.push(href);
+    }
+    if (!cssLinks) cssLinks = css.slice(0, i);
+  }
+  if (!cssLinks) return route;
+  if (cssLinks.length > 0) return {
+    ...route,
+    css: cssLinks
+  };
+  const nextRoute = { ...route };
+  delete nextRoute.css;
+  return nextRoute;
+}
+function hasRouteAssets(route) {
+  return !!route.scripts?.length || !!route.css?.length;
+}
+function hasRequestAssets(assets) {
+  return !!assets && (!!assets.preloads?.length || hasRouteAssets(assets));
+}
+function mergeRequestAssetsIntoRootRoute(rootRoute, requestAssets) {
+  const preloads = requestAssets?.preloads?.length ? [...requestAssets.preloads, ...rootRoute?.preloads ?? []] : rootRoute?.preloads;
+  const scripts = requestAssets?.scripts?.length ? [...requestAssets.scripts, ...rootRoute?.scripts ?? []] : rootRoute?.scripts;
+  const cssLinks = requestAssets?.css?.length ? [...requestAssets.css, ...rootRoute?.css ?? []] : rootRoute?.css;
+  return {
+    ...rootRoute ?? {},
+    ...preloads?.length ? { preloads } : {},
+    ...scripts?.length ? { scripts } : {},
+    ...cssLinks?.length ? { css: cssLinks } : {}
+  };
+}
+function composeManifest(scriptFormat, inlineStyle, routes, requestAssets) {
+  const base = {
+    ...scriptFormat ? { scriptFormat } : {},
+    ...inlineStyle ? { inlineStyle } : {},
+    routes
+  };
+  if (!hasRequestAssets(requestAssets)) return base;
+  return {
+    ...base,
+    routes: {
+      ...routes,
+      [rootRouteId]: mergeRequestAssetsIntoRootRoute(routes[rootRouteId], requestAssets)
+    }
+  };
+}
+function attachRouterServerSsrUtils({ router, manifest: manifest2, getRequestAssets }) {
+  let memoizedPreparedManifest;
+  router.ssr = { get manifest() {
+    if (!manifest2) return manifest2;
+    const requestAssets = getRequestAssets?.();
+    const hasAssets = hasRequestAssets(requestAssets);
+    if (!hasAssets && !manifest2.inlineCss) return manifest2;
+    let inlineCssAsset;
+    let routes = manifest2.routes;
+    if (manifest2.inlineCss) {
+      const matches = _getRenderedMatches(router.stores.matches.get());
+      const cacheKey = getMatchedRoutesCacheKey(matches);
+      if (memoizedPreparedManifest?.cacheKey === cacheKey) {
+        inlineCssAsset = memoizedPreparedManifest.inlineCssAsset;
+        routes = memoizedPreparedManifest.routes;
+      } else {
+        const preparedManifest = getPreparedMatchedManifestRoutes(manifest2, matches, cacheKey);
+        inlineCssAsset = getInlineCssAssetForPreparedRoutes(manifest2, preparedManifest);
+        if (preparedManifest.hasStrippedRoutes) routes = {
+          ...manifest2.routes,
+          ...preparedManifest.routes
+        };
+        memoizedPreparedManifest = {
+          cacheKey,
+          inlineCssAsset,
+          routes
+        };
+      }
+    }
+    return composeManifest(manifest2.scriptFormat, inlineCssAsset, routes, hasAssets ? requestAssets : void 0);
+  } };
+  let dehydrationPhase = "idle";
+  let renderFinished = false;
+  const renderFinishedListeners = [];
+  const cleanupListeners = [];
+  let cleanupStarted = false;
+  let settled = false;
+  let disposeSerialization;
+  const hydrationScripts = createHydrationScripts(router.options.ssr?.nonce);
+  const serverSsr = {
+    hydrationScripts,
+    dehydrate: async (opts) => {
+      if (dehydrationPhase !== "idle") {
+        invariant();
+      }
+      opts?.signal?.throwIfAborted();
+      dehydrationPhase = "started";
+      let matchesToDehydrate = _getRenderedMatches(router.stores.matches.get());
+      if (router.isShell()) matchesToDehydrate = matchesToDehydrate.slice(0, 1);
+      const matches = matchesToDehydrate.map(dehydrateMatch);
+      let manifestToDehydrate = void 0;
+      if (manifest2) {
+        const cacheKey = getMatchedRoutesCacheKey(matchesToDehydrate);
+        const preparedManifest = getPreparedMatchedManifestRoutes(manifest2, matchesToDehydrate, cacheKey);
+        manifestToDehydrate = composeManifest(manifest2.scriptFormat, preparedManifest.inlineCssHrefs ? createInlineCssPlaceholderAsset() : void 0, preparedManifest.routes, opts?.requestAssets);
+      }
+      const dehydratedRouter = {
+        manifest: manifestToDehydrate,
+        matches
+      };
+      const dehydrate = router.options.dehydrate;
+      const dehydratedData = dehydrate ? opts?.signal ? await waitForReason(dehydrate.call(router.options), opts.signal) : await dehydrate.call(router.options) : void 0;
+      opts?.signal?.throwIfAborted();
+      if (cleanupStarted) return;
+      if (dehydratedData !== void 0) dehydratedRouter.dehydratedData = dehydratedData;
+      const trackPlugins = { didRun: false };
+      const serializationAdapters = router.options.serializationAdapters;
+      const plugins = serializationAdapters ? [...serializationAdapters.map((adapter) => /* @__PURE__ */ makeSsrSerovalPlugin(adapter, trackPlugins)), ...ssrSerovalPlugins] : ssrSerovalPlugins;
+      let serializationCompleteSignaled = false;
+      let initialSerialized = false;
+      const completeScriptSerialization = (result) => {
+        if (serializationCompleteSignaled || cleanupStarted) return;
+        serializationCompleteSignaled = true;
+        const dispose2 = disposeSerialization;
+        disposeSerialization = void 0;
+        if (result === true) {
+          settled = true;
+          hydrationScripts.finish();
+        } else if (result) hydrationScripts.fail(result.error);
+        if (dispose2) queueMicrotask(() => disposeSerializationSafely(dispose2));
+      };
+      let synchronousFailure;
+      const dispose = crossSerializeStream(dehydratedRouter, {
+        refs: /* @__PURE__ */ new Map(),
+        plugins,
+        onSerialize: (data, initial) => {
+          if (serializationCompleteSignaled || cleanupStarted) return;
+          initialSerialized ||= initial;
+          if (!hydrationScripts.pushSerializedSource(data, initial, trackPlugins.didRun)) completeScriptSerialization(false);
+        },
+        onError: (err) => {
+          if (serializationCompleteSignaled || cleanupStarted) return;
+          console.error("Serialization error:", err);
+          synchronousFailure = { error: err };
+          completeScriptSerialization({ error: err });
+        },
+        scopeId: "tsr",
+        onDone: () => {
+          if (initialSerialized) completeScriptSerialization(true);
+        }
+      });
+      if (cleanupStarted || serializationCompleteSignaled) disposeSerializationSafely(dispose);
+      else disposeSerialization = dispose;
+      if (synchronousFailure) throw synchronousFailure.error;
+    },
+    onRenderFinished: (listener) => {
+      if (cleanupStarted) return;
+      if (renderFinished) {
+        try {
+          listener();
+        } catch (error) {
+          console.error("Error in render finished listener:", error);
+        }
+        return;
+      }
+      renderFinishedListeners.push(listener);
+    },
+    onCleanup: (listener) => {
+      if (cleanupStarted) {
+        try {
+          listener(settled);
+        } catch (error) {
+          console.error("Error in SSR cleanup listener:", error);
+        }
+        return;
+      }
+      cleanupListeners.push(listener);
+    },
+    setRenderFinished: () => {
+      if (cleanupStarted || renderFinished) return;
+      renderFinished = true;
+      hydrationScripts.liftBarrier();
+      notifyAndClearListeners(renderFinishedListeners, "Error in render finished listener:", void 0);
+    },
+    disableHydration: () => {
+      if (cleanupStarted || dehydrationPhase === "disabled") return;
+      if (dehydrationPhase !== "idle") {
+        invariant();
+      }
+      hydrationScripts.disableHydration();
+      dehydrationPhase = "disabled";
+    },
+    takeInitialHydrationScriptTags: hydrationScripts.takeInitialHydrationScriptTags,
+    cleanup() {
+      if (cleanupStarted) return;
+      cleanupStarted = true;
+      hydrationScripts.cleanup();
+      const dispose = disposeSerialization;
+      disposeSerialization = void 0;
+      disposeSerializationSafely(dispose);
+      notifyAndClearListeners(cleanupListeners, "Error in SSR cleanup listener:", settled);
+      renderFinishedListeners.length = 0;
+      router.ssr = void 0;
+      router.serverSsr = void 0;
+    }
+  };
+  router.serverSsr = serverSsr;
+  for (const listener of router.serverSsrLifecycle?.onServerSsrAttach ?? []) try {
+    listener(serverSsr);
+  } catch (err) {
+    console.error("SSR attach listener error:", err);
+  }
+}
+function getNormalizedURL(url, base) {
+  if (typeof url === "string") url = url.replace("\\", "%5C");
+  const rawUrl = new URL(url, base);
+  const handledProtocolRelativeURL = rawUrl.pathname.startsWith("//");
+  const decodedPathname = decodePath(handledProtocolRelativeURL ? rawUrl.pathname.replace(/^\/+/, "/") : rawUrl.pathname);
+  const searchParams = new URLSearchParams(rawUrl.search);
+  const normalizedHref = decodedPathname + (searchParams.size > 0 ? "?" : "") + searchParams.toString() + rawUrl.hash;
+  return {
+    url: new URL(normalizedHref, rawUrl.origin),
+    handledProtocolRelativeURL
+  };
+}
+function isSsrResponse(value) {
+  if (typeof value !== "object" || value === null || !("response" in value) || !(value.response instanceof Response) || !("serverSsrCleanup" in value)) return false;
+  if (value.serverSsrCleanup === "none") return true;
+  return value.serverSsrCleanup === "stream" && "dispose" in value && typeof value.dispose === "function";
+}
+function normalizeSsrResponse(result) {
+  if (result instanceof Response) return {
+    response: result,
+    serverSsrCleanup: "none"
+  };
+  if (isSsrResponse(result)) return result;
+  throw new TypeError("Expected a Response from the SSR handler");
+}
+function cancelResponseBody(response, reason) {
+  const body = response.body;
+  if (!body) return;
+  body.cancel(reason).catch(console.error);
+}
+function disposeSsrResponse(result, reason) {
+  const response = normalizeSsrResponse(result);
+  if (response.serverSsrCleanup === "stream") response.dispose(reason);
+  else cancelResponseBody(response.response, reason);
+}
+function bindSsrResponseToRequest(router, result, signal) {
+  const ssrResponse = normalizeSsrResponse(result);
+  if (ssrResponse.serverSsrCleanup !== "stream") {
+    if (signal.aborted) disposeSsrResponse(result, signal.reason);
+    return ssrResponse;
+  }
+  const abort = () => {
+    disposeSsrResponse(ssrResponse, signal.reason);
+  };
+  if (signal.aborted) {
+    abort();
+    return ssrResponse;
+  }
+  const serverSsr = router?.serverSsr;
+  if (serverSsr?.hydrationScripts.requestSignal === signal) {
+    serverSsr.onCleanup(() => {
+      if (signal.aborted) abort();
+    });
+    return ssrResponse;
+  }
+  signal.addEventListener("abort", abort, { once: true });
+  if (!serverSsr) return ssrResponse;
+  serverSsr.onCleanup(() => {
+    signal.removeEventListener("abort", abort);
+  });
+  return ssrResponse;
+}
+function replaceSsrResponse(result, response, reason) {
+  disposeSsrResponse(result, reason);
+  return {
+    response,
+    serverSsrCleanup: "none"
+  };
+}
+function stripSsrResponseBody(result, reason) {
+  const ssrResponse = normalizeSsrResponse(result);
+  disposeSsrResponse(ssrResponse, reason);
+  return {
+    response: new Response(null, ssrResponse.response),
+    serverSsrCleanup: "none"
+  };
 }
 var serovalPlugins = void 0;
 var FORM_DATA_CONTENT_TYPES = ["multipart/form-data", "application/x-www-form-urlencoded"];
 var MAX_PAYLOAD_SIZE = 1e6;
+var MAX_PENDING_SERIALIZATION_RECORDS = 1024;
+var MAX_PENDING_SERIALIZATION_BYTES = 32 * 1024 * 1024;
+var textEncoder = new TextEncoder();
+function encodeSerializationRecord(value) {
+  return textEncoder.encode(JSON.stringify(value));
+}
+function exceedsPendingSerializationLimit(record, recordCount, pendingBytes) {
+  return recordCount >= MAX_PENDING_SERIALIZATION_RECORDS || pendingBytes + record.byteLength > MAX_PENDING_SERIALIZATION_BYTES;
+}
+function runSerializationCleanup(dispose) {
+  try {
+    dispose();
+  } catch {
+  }
+}
+function cancelRawStream(stream, reason) {
+  stream.cancel(reason).catch(() => {
+  });
+}
 var handleServerAction = async ({ request, context, serverFnId }) => {
   const methodUpper = request.method.toUpperCase();
   const url = new URL(request.url);
@@ -3481,204 +5389,276 @@ var handleServerAction = async ({ request, context, serverFnId }) => {
     headers: { Allow: action.method }
   });
   const isServerFn = request.headers.get("x-tsr-serverFn") === "true";
-  if (!serovalPlugins) serovalPlugins = getDefaultSerovalPlugins();
+  serovalPlugins ??= getSerovalPlugins(defaultSerovalDeserializerPlugins);
   const contentType = request.headers.get("Content-Type");
-  function parsePayload(payload) {
-    return Pu(payload, { plugins: serovalPlugins });
-  }
-  return await (async () => {
-    try {
-      let serializeResult = function(res2) {
-        let nonStreamingBody = void 0;
-        const alsResponse = getResponse();
-        if (res2 !== void 0) {
-          const rawStreams = /* @__PURE__ */ new Map();
-          let initialPhase = true;
-          let lateStreamWriter;
-          let lateStreamReadable = void 0;
-          const pendingLateStreams = [];
-          const plugins = [/* @__PURE__ */ createRawStreamRPCPlugin((id, stream) => {
-            if (initialPhase) {
-              rawStreams.set(id, stream);
-              return;
-            }
-            if (lateStreamWriter) {
-              lateStreamWriter.write({
-                id,
-                stream
-              }).catch(() => {
-              });
-              return;
-            }
-            pendingLateStreams.push({
-              id,
-              stream
-            });
-          }), ...serovalPlugins || []];
-          let done = false;
-          const callbacks = {
-            onParse: (value) => {
-              nonStreamingBody = value;
-            },
-            onDone: () => {
-              done = true;
-            },
-            onError: (error) => {
-              throw error;
-            }
-          };
-          iu(res2, {
-            refs: /* @__PURE__ */ new Map(),
-            plugins,
-            onParse(value) {
-              callbacks.onParse(value);
-            },
-            onDone() {
-              callbacks.onDone();
-            },
-            onError: (error) => {
-              callbacks.onError(error);
-            }
-          });
-          initialPhase = false;
-          if (done && rawStreams.size === 0) return new Response(nonStreamingBody ? JSON.stringify(nonStreamingBody) : void 0, {
-            status: alsResponse.status,
-            statusText: alsResponse.statusText,
-            headers: {
-              "Content-Type": "application/json",
-              [X_TSS_SERIALIZED]: "true"
-            }
-          });
-          const { readable, writable } = new TransformStream();
-          lateStreamReadable = readable;
-          lateStreamWriter = writable.getWriter();
-          for (const registration of pendingLateStreams) lateStreamWriter.write(registration).catch(() => {
-          });
-          pendingLateStreams.length = 0;
-          const multiplexedStream = createMultiplexedStream(new ReadableStream({
-            start(controller) {
-              callbacks.onParse = (value) => {
-                controller.enqueue(JSON.stringify(value) + "\n");
-              };
-              callbacks.onDone = () => {
-                try {
-                  controller.close();
-                } catch {
-                }
-                lateStreamWriter?.close().catch(() => {
-                }).finally(() => {
-                  lateStreamWriter = void 0;
-                });
-              };
-              callbacks.onError = (error) => {
-                controller.error(error);
-                lateStreamWriter?.abort(error).catch(() => {
-                }).finally(() => {
-                  lateStreamWriter = void 0;
-                });
-              };
-              if (nonStreamingBody !== void 0) callbacks.onParse(nonStreamingBody);
-              if (done) callbacks.onDone();
-            },
-            cancel() {
-              lateStreamWriter?.abort().catch(() => {
-              });
-              lateStreamWriter = void 0;
-            }
-          }), rawStreams, lateStreamReadable);
-          return new Response(multiplexedStream, {
-            status: alsResponse.status,
-            statusText: alsResponse.statusText,
-            headers: {
-              "Content-Type": TSS_CONTENT_TYPE_FRAMED_VERSIONED,
-              [X_TSS_SERIALIZED]: "true"
-            }
-          });
-        }
-        return new Response(void 0, {
-          status: alsResponse.status,
-          statusText: alsResponse.statusText
-        });
-      };
-      let res = await (async () => {
-        if (FORM_DATA_CONTENT_TYPES.some((type) => contentType && contentType.includes(type))) {
-          if (methodUpper === "GET") {
-            if (false) ;
-            invariant();
-          }
-          const formData = await request.formData();
-          const serializedContext = formData.get(TSS_FORMDATA_CONTEXT);
-          formData.delete(TSS_FORMDATA_CONTEXT);
-          const params = {
-            context,
-            data: formData,
-            method: methodUpper
-          };
-          if (typeof serializedContext === "string") try {
-            const deserializedContext = Pu(JSON.parse(serializedContext), { plugins: serovalPlugins });
-            if (typeof deserializedContext === "object" && deserializedContext) params.context = safeObjectMerge(deserializedContext, context);
-          } catch (e) {
-            if (false) ;
-          }
-          return await action(params);
-        }
-        if (methodUpper === "GET") {
-          const payloadParam = url.searchParams.get("payload");
-          if (payloadParam && payloadParam.length > MAX_PAYLOAD_SIZE) throw new Error("Payload too large");
-          const payload2 = payloadParam ? parsePayload(JSON.parse(payloadParam)) : {};
-          payload2.context = safeObjectMerge(payload2.context, context);
-          payload2.method = methodUpper;
-          return await action(payload2);
-        }
-        let jsonPayload;
-        if (contentType?.includes("application/json")) jsonPayload = await request.json();
-        const payload = jsonPayload ? parsePayload(jsonPayload) : {};
-        payload.context = safeObjectMerge(payload.context, context);
-        payload.method = methodUpper;
-        return await action(payload);
-      })();
-      const unwrapped = res.result || res.error;
-      if (isNotFound(res)) res = isNotFoundResponse(res);
-      if (!isServerFn) return unwrapped;
-      if (unwrapped instanceof Response) {
-        if (isRedirect(unwrapped)) return unwrapped;
-        unwrapped.headers.set(X_TSS_RAW_RESPONSE, "true");
-        return unwrapped;
+  try {
+    let res;
+    if (FORM_DATA_CONTENT_TYPES.some((type) => contentType && contentType.includes(type))) {
+      if (methodUpper === "GET") {
+        if (false) ;
+        invariant();
       }
-      return serializeResult(res);
-    } catch (error) {
-      if (error instanceof Response) return error;
-      if (isNotFound(error)) return isNotFoundResponse(error);
-      console.info();
-      console.info("Server Fn Error!");
-      console.info();
-      console.error(error);
-      console.info();
-      const serializedError = JSON.stringify(await Promise.resolve(su(error, {
-        refs: /* @__PURE__ */ new Map(),
-        plugins: serovalPlugins
-      })));
-      const response = getResponse();
+      const formData = await request.formData();
+      const serializedContext = formData.get(TSS_FORMDATA_CONTEXT);
+      formData.delete(TSS_FORMDATA_CONTEXT);
+      const params = {
+        context,
+        data: formData,
+        method: methodUpper
+      };
+      if (typeof serializedContext === "string") try {
+        const deserializedContext = fromJSON(JSON.parse(serializedContext), { plugins: serovalPlugins });
+        if (typeof deserializedContext === "object" && deserializedContext) params.context = safeObjectMerge(deserializedContext, context);
+      } catch (e) {
+        if (false) ;
+      }
+      res = await action(params);
+    } else if (methodUpper === "GET") {
+      const payloadParam = url.searchParams.get("payload");
+      if (payloadParam && payloadParam.length > MAX_PAYLOAD_SIZE) throw new Error("Payload too large");
+      const payload = payloadParam ? fromJSON(JSON.parse(payloadParam), { plugins: serovalPlugins }) : void 0;
+      res = await action({
+        data: payload?.data,
+        context: safeObjectMerge(payload?.context, context),
+        method: methodUpper
+      });
+    } else {
+      const payload = contentType?.includes("application/json") ? fromJSON(await request.json(), { plugins: serovalPlugins }) : void 0;
+      res = await action({
+        data: payload?.data,
+        context: safeObjectMerge(payload?.context, context),
+        method: methodUpper
+      });
+    }
+    const unwrapped = res.error !== void 0 ? res.error : res.result;
+    if (isNotFound(res)) res = isNotFoundResponse(res);
+    if (!isServerFn && (unwrapped instanceof Response || unwrapped === null || typeof unwrapped !== "object")) return unwrapped;
+    if (unwrapped instanceof Response) {
+      if (isRedirect(unwrapped)) return unwrapped;
+      unwrapped.headers.set(X_TSS_RAW_RESPONSE, "true");
+      return unwrapped;
+    }
+    return serializeResult(res, request.signal, serovalPlugins);
+  } catch (error) {
+    if (error instanceof Response) return error;
+    if (isNotFound(error)) return isNotFoundResponse(error);
+    console.error("Server Fn Error!", error);
+    const serializedError = JSON.stringify(await toCrossJSONAsync(error, {
+      refs: /* @__PURE__ */ new Map(),
+      plugins: serovalPlugins
+    }));
+    const response = getResponse();
+    const headers = {
+      "Content-Type": "application/json",
+      [X_TSS_SERIALIZED]: "true"
+    };
+    try {
       return new Response(serializedError, {
         status: response.status ?? 500,
         statusText: response.statusText,
+        headers
+      });
+    } catch {
+      return new Response(serializedError, {
+        status: 500,
+        statusText: "",
+        headers
+      });
+    }
+  }
+};
+function serializeResult(res, signal, plugins) {
+  const alsResponse = getResponse();
+  const initialRecords = [];
+  let initialBytes = 0;
+  const pendingRawStreams = [];
+  let done = false;
+  let initialParsed = false;
+  let serializationFailure;
+  let disposeSerialization;
+  let onParse2 = (value, initial) => {
+    if (serializationFailure) return;
+    initialParsed ||= initial;
+    const record = encodeSerializationRecord(value);
+    if (exceedsPendingSerializationLimit(record, initialRecords.length, initialBytes)) {
+      serializationFailure = [/* @__PURE__ */ new Error("Server function serialization exceeded its pending output limit")];
+      return;
+    }
+    initialRecords.push(record);
+    initialBytes += record.byteLength;
+  };
+  let onDone2 = () => {
+    if (initialParsed) done = true;
+  };
+  let onError2 = (error) => {
+    serializationFailure ??= [error];
+  };
+  const rawStreamPlugin = /* @__PURE__ */ createRawStreamRPCPlugin((id, stream) => {
+    if (serializationFailure) {
+      cancelRawStream(stream, serializationFailure[0]);
+      return;
+    }
+    if (id > MAX_FRAMED_STREAMS) {
+      const error = /* @__PURE__ */ new Error(`Too many raw streams in framed response (max ${MAX_FRAMED_STREAMS})`);
+      cancelRawStream(stream, error);
+      onError2(error);
+      return;
+    }
+    pendingRawStreams.push({
+      id,
+      stream
+    });
+  });
+  const dispose = toCrossJSONStream(res, {
+    refs: /* @__PURE__ */ new Map(),
+    plugins: [rawStreamPlugin, ...plugins],
+    onParse(value, initial) {
+      onParse2(value, initial);
+    },
+    onDone() {
+      onDone2();
+    },
+    onError: (error) => {
+      onError2(error);
+    }
+  });
+  if (serializationFailure) {
+    runSerializationCleanup(dispose);
+    for (const registration of pendingRawStreams) cancelRawStream(registration.stream, serializationFailure[0]);
+    throw serializationFailure[0];
+  }
+  if (!done) disposeSerialization = dispose;
+  if (done && pendingRawStreams.length === 0 && initialRecords.length === 1) return new Response(initialRecords[0], {
+    status: alsResponse.status,
+    statusText: alsResponse.statusText,
+    headers: {
+      "Content-Type": "application/json",
+      [X_TSS_SERIALIZED]: "true"
+    }
+  });
+  if (done && initialRecords.length === 1) {
+    const json = initialRecords[0];
+    if (json.byteLength > MAX_FRAME_PAYLOAD_SIZE) {
+      const error = /* @__PURE__ */ new Error("Server function serialization exceeded its pending output limit");
+      for (const registration of pendingRawStreams) cancelRawStream(registration.stream, error);
+      throw error;
+    }
+    const rawStreams = pendingRawStreams.splice(0);
+    initialRecords.length = 0;
+    return createFramedResponse(new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          json,
+          rawStreams
+        });
+        controller.close();
+      },
+      cancel(reason) {
+        for (const registration of rawStreams) cancelRawStream(registration.stream, reason);
+      }
+    }), { signal });
+  }
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const recordAbortController = new AbortController();
+  let pendingBytes = 0;
+  const pendingRecords = /* @__PURE__ */ new Set();
+  const abortRecordStream = (error) => {
+    if (serializationFailure) return;
+    serializationFailure = [error];
+    const disposeCurrentSerialization = disposeSerialization;
+    disposeSerialization = void 0;
+    for (const registration of pendingRawStreams.splice(0)) cancelRawStream(registration.stream, error);
+    for (const record of pendingRecords) for (const registration of record.rawStreams) cancelRawStream(registration.stream, error);
+    pendingRecords.clear();
+    recordAbortController.abort(error);
+    writer.abort(error).catch(() => {
+    });
+    if (disposeCurrentSerialization) runSerializationCleanup(disposeCurrentSerialization);
+  };
+  const writeRecord = (json, rawStreams) => {
+    if (serializationFailure) {
+      for (const registration of rawStreams) cancelRawStream(registration.stream, serializationFailure[0]);
+      return false;
+    }
+    if (json.byteLength > MAX_FRAME_PAYLOAD_SIZE || exceedsPendingSerializationLimit(json, pendingRecords.size, pendingBytes)) {
+      const error = /* @__PURE__ */ new Error("Server function serialization exceeded its pending output limit");
+      for (const registration of rawStreams) cancelRawStream(registration.stream, error);
+      onError2(error);
+      return false;
+    }
+    pendingBytes += json.byteLength;
+    const record = {
+      json,
+      rawStreams
+    };
+    pendingRecords.add(record);
+    writer.write(record).then(() => {
+      pendingRecords.delete(record);
+      pendingBytes -= json.byteLength;
+    }, (error) => {
+      const stillOwned = pendingRecords.delete(record);
+      pendingBytes -= json.byteLength;
+      if (stillOwned) for (const registration of rawStreams) cancelRawStream(registration.stream, error);
+    });
+    return true;
+  };
+  onParse2 = (value) => {
+    if (serializationFailure) return;
+    writeRecord(encodeSerializationRecord(value), pendingRawStreams.splice(0));
+  };
+  onDone2 = () => {
+    if (serializationFailure) return;
+    disposeSerialization = void 0;
+    writer.close().catch(() => {
+    });
+  };
+  onError2 = (error) => {
+    abortRecordStream(error);
+  };
+  const initialRawStreams = pendingRawStreams.splice(0);
+  for (let index = 0; index < initialRecords.length; index++) {
+    const isLast = index === initialRecords.length - 1;
+    if (!writeRecord(initialRecords[index], isLast ? initialRawStreams : [])) {
+      if (!isLast) for (const registration of initialRawStreams) cancelRawStream(registration.stream, serializationFailure[0]);
+      initialRecords.length = 0;
+      throw serializationFailure[0];
+    }
+  }
+  initialRecords.length = 0;
+  if (done) onDone2();
+  writer.closed.catch((error) => {
+    abortRecordStream(error);
+  });
+  return createFramedResponse(readable, {
+    signal: AbortSignal.any([recordAbortController.signal, signal]),
+    onCancel: abortRecordStream
+  });
+  function createFramedResponse(records, options) {
+    const multiplexedStream = createMultiplexedStream(records, options);
+    try {
+      return new Response(multiplexedStream, {
+        status: alsResponse.status,
+        statusText: alsResponse.statusText,
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": TSS_CONTENT_TYPE_FRAMED_VERSIONED,
           [X_TSS_SERIALIZED]: "true"
         }
       });
+    } catch (error) {
+      cancelRawStream(multiplexedStream, error);
+      throw error;
     }
-  })();
-};
+  }
+}
 function isNotFoundResponse(error) {
   const { headers, ...rest } = error;
-  return new Response(JSON.stringify(rest), {
+  const response = new Response(JSON.stringify(rest), {
     status: 404,
-    headers: {
-      "Content-Type": "application/json",
-      ...headers || {}
-    }
+    headers
   });
+  response.headers.set("Content-Type", "application/json");
+  return response;
 }
 var LINK_PARAM_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 var PRELOAD_AS_VALUES = /* @__PURE__ */ new Set([
@@ -3994,10 +5974,10 @@ function resolveTransformAssetsConfig(transform) {
       transformFn: ({ url, kind }) => {
         const href = `${prefix}${url}`;
         if (kind === "css-url") return { href };
-        const co2 = resolveTransformAssetsCrossOrigin(crossOrigin, kind);
-        return co2 ? {
+        const co = resolveTransformAssetsCrossOrigin(crossOrigin, kind);
+        return co ? {
           href,
-          crossOrigin: co2
+          crossOrigin: co
         } : { href };
       },
       cache: true
@@ -4014,14 +5994,6 @@ function resolveTransformAssetsConfig(transform) {
     cache: transform.cache !== false
   };
 }
-function buildClientEntryScriptTag(clientEntry, scriptFormat = "module", crossOrigin) {
-  return { attrs: {
-    ...scriptFormat === "module" ? { type: "module" } : {},
-    async: true,
-    src: clientEntry,
-    ...{}
-  } };
-}
 function assignManifestLink(link, next) {
   if (typeof link === "string") return next.crossOrigin ? next : next.href;
   const nextLink = {
@@ -4032,28 +6004,8 @@ function assignManifestLink(link, next) {
   else delete nextLink.crossOrigin;
   return nextLink;
 }
-function appendUniqueManifestAssetLink(target, link) {
-  const href = typeof link === "string" ? link : link.href;
-  if (target) {
-    for (const item of target) if ((typeof item === "string" ? item : item.href) === href) return target;
-  }
-  return [...target ?? [], link];
-}
-function addClientEntryToManifest(manifest2, clientEntry) {
-  const rootRoute = manifest2.routes.__root__ ?? {};
-  const rootScripts = rootRoute.scripts ?? [];
-  const scripts = rootScripts.some((script) => script.attrs?.src === clientEntry) ? rootScripts : [...rootScripts, buildClientEntryScriptTag(clientEntry, getManifestScriptFormat(manifest2))];
-  manifest2.routes = {
-    ...manifest2.routes,
-    __root__: {
-      ...rootRoute,
-      preloads: appendUniqueManifestAssetLink(rootRoute.preloads, clientEntry),
-      scripts
-    }
-  };
-}
 async function transformManifestAssets(source, transformFn, _opts) {
-  const manifest2 = structuredClone(source.manifest);
+  const manifest2 = structuredClone(source);
   const inlineCssEnabled = _opts?.inlineCss !== false;
   const scriptTransforms = /* @__PURE__ */ new Map();
   const transformScript = (url) => {
@@ -4068,7 +6020,6 @@ async function transformManifestAssets(source, transformFn, _opts) {
   };
   if (!inlineCssEnabled) delete manifest2.inlineCss;
   else if (manifest2.inlineCss) manifest2.inlineCss = await transformInlineCssStyles(manifest2.inlineCss, transformFn);
-  addClientEntryToManifest(manifest2, source.clientEntry);
   for (const route of Object.values(manifest2.routes)) {
     if (route.preloads?.length) route.preloads = await Promise.all(route.preloads.map(async (link) => {
       const result = await transformScript(resolveManifestAssetLink(link).href);
@@ -4101,14 +6052,12 @@ async function transformManifestAssets(source, transformFn, _opts) {
   }
   return manifest2;
 }
-function buildManifestWithClientEntry(source, opts) {
-  const manifest2 = {
-    ...source.manifest.scriptFormat ? { scriptFormat: source.manifest.scriptFormat } : {},
-    ...opts?.inlineCss !== false && source.manifest.inlineCss ? { inlineCss: structuredClone(source.manifest.inlineCss) } : {},
-    routes: { ...source.manifest.routes }
+function buildManifest(source, opts) {
+  return {
+    ...source.scriptFormat ? { scriptFormat: source.scriptFormat } : {},
+    ...opts?.inlineCss !== false && source.inlineCss ? { inlineCss: structuredClone(source.inlineCss) } : {},
+    routes: { ...source.routes }
   };
-  addClientEntryToManifest(manifest2, source.clientEntry);
-  return manifest2;
 }
 function getStaticHandlerInlineCssDefault(handlerInlineCss) {
   if (typeof handlerInlineCss === "function") return;
@@ -4211,7 +6160,7 @@ function getOrCreateCachedFinalManifestPromise(cachedFinalManifestPromises, cach
   return cacheFinalManifestPromise(cachedFinalManifestPromises, cacheKey, Promise.resolve().then(computeFinalManifest));
 }
 async function buildFinalManifest(opts) {
-  return opts.transformFn ? await transformManifestAssets(opts.base, opts.transformFn, { inlineCss: opts.inlineCss }) : buildManifestWithClientEntry(opts.base, { inlineCss: opts.inlineCss });
+  return opts.transformFn ? await transformManifestAssets(opts.base, opts.transformFn, { inlineCss: opts.inlineCss }) : buildManifest(opts.base, { inlineCss: opts.inlineCss });
 }
 async function resolveFinalManifest(opts) {
   const computeFinalManifest = async () => {
@@ -4240,406 +6189,28 @@ function warmupFinalManifest(opts) {
 }
 var ServerFunctionSerializationAdapter = createSerializationAdapter({
   key: "$TSS/serverfn",
-  test: (v2) => {
-    if (typeof v2 !== "function") return false;
-    if (!(TSS_SERVER_FUNCTION in v2)) return false;
-    return !!v2[TSS_SERVER_FUNCTION];
+  test: (v) => {
+    if (typeof v !== "function") return false;
+    if (!(TSS_SERVER_FUNCTION in v)) return false;
+    return !!v[TSS_SERVER_FUNCTION];
   },
   toSerializable: ({ serverFnMeta }) => ({ functionId: serverFnMeta.id }),
   fromSerializable: ({ functionId }) => {
-    const fn2 = async (opts, signal) => {
-      return (await (await getServerFnById(functionId))(opts ?? {}, signal)).result;
+    const fn = async (opts, signal) => {
+      const serverFn = await getServerFnById(functionId);
+      const result = await serverFn({
+        data: opts?.data,
+        context: opts?.context,
+        method: serverFn.method ?? "GET"
+      }, signal);
+      if (result.error !== void 0) throw result.error;
+      return result.result;
     };
-    return fn2;
+    return fn;
   }
 });
-var tsrScript_default = "self.$_TSR={h(){this.hydrated=!0,this.c()},e(){this.streamEnded=!0,this.c()},c(){this.hydrated&&this.streamEnded&&(delete self.$_TSR,delete self.$R.tsr)},p(e){this.initialized?e():this.buffer.push(e)},buffer:[]}";
-const SCOPE_ID = "tsr";
-const TSR_PREFIX = GLOBAL_TSR + ".router=";
-const P_PREFIX = GLOBAL_TSR + ".p(()=>";
-const P_SUFFIX = ")";
-function dehydrateMatch(match) {
-  const dehydratedMatch = {
-    i: dehydrateSsrMatchId(match.id),
-    u: match.updatedAt,
-    s: match.status
-  };
-  for (const [key, shorthand] of [
-    ["__beforeLoadContext", "b"],
-    ["loaderData", "l"],
-    ["error", "e"],
-    ["ssr", "ssr"]
-  ]) if (match[key] !== void 0) dehydratedMatch[shorthand] = match[key];
-  if (match.globalNotFound) dehydratedMatch.g = true;
-  return dehydratedMatch;
-}
-const INITIAL_SCRIPTS = [dn(SCOPE_ID), tsrScript_default];
-var ScriptBuffer = class {
-  constructor(router) {
-    this._scriptBarrierLifted = false;
-    this._cleanedUp = false;
-    this._pendingMicrotask = false;
-    this.router = router;
-    this._queue = INITIAL_SCRIPTS.slice();
-  }
-  enqueue(script) {
-    if (this._cleanedUp) return;
-    this._queue.push(script);
-    if (this._scriptBarrierLifted && !this._pendingMicrotask) {
-      this._pendingMicrotask = true;
-      queueMicrotask(() => {
-        this._pendingMicrotask = false;
-        this.injectBufferedScripts();
-      });
-    }
-  }
-  liftBarrier() {
-    if (this._scriptBarrierLifted || this._cleanedUp) return;
-    this._scriptBarrierLifted = true;
-    if (this._queue.length > 0 && !this._pendingMicrotask) {
-      this._pendingMicrotask = true;
-      queueMicrotask(() => {
-        this._pendingMicrotask = false;
-        this.injectBufferedScripts();
-      });
-    }
-  }
-  /**
-  * Flushes any pending scripts synchronously.
-  * Call this before emitting onSerializationFinished to ensure all scripts are injected.
-  *
-  * IMPORTANT: Only injects if the barrier has been lifted. Before the barrier is lifted,
-  * scripts should remain in the queue so takeBufferedScripts() can retrieve them
-  */
-  flush() {
-    if (!this._scriptBarrierLifted) return;
-    if (this._cleanedUp) return;
-    this._pendingMicrotask = false;
-    const scriptsToInject = this.takeAll();
-    if (scriptsToInject && this.router?.serverSsr) this.router.serverSsr.injectScript(scriptsToInject);
-  }
-  takeAll() {
-    const bufferedScripts = this._queue;
-    this._queue = [];
-    if (bufferedScripts.length === 0) return;
-    if (bufferedScripts.length === 1) return bufferedScripts[0] + ";document.currentScript.remove()";
-    return bufferedScripts.join(";") + ";document.currentScript.remove()";
-  }
-  injectBufferedScripts() {
-    if (this._cleanedUp) return;
-    if (this._queue.length === 0) return;
-    const scriptsToInject = this.takeAll();
-    if (scriptsToInject && this.router?.serverSsr) this.router.serverSsr.injectScript(scriptsToInject);
-  }
-  cleanup() {
-    this._cleanedUp = true;
-    this._queue = [];
-    this.router = void 0;
-  }
-};
-const MANIFEST_CACHE_SIZE = 100;
-const manifestCaches = /* @__PURE__ */ new WeakMap();
-function getManifestCache(manifest2) {
-  const cache = manifestCaches.get(manifest2);
-  if (cache) return cache;
-  const newCache = createLRUCache(MANIFEST_CACHE_SIZE);
-  manifestCaches.set(manifest2, newCache);
-  return newCache;
-}
-function getInlineCssForPreparedRoutes(manifest2, preparedRoutes) {
-  if (preparedRoutes.inlineCss !== void 0) return preparedRoutes.inlineCss;
-  const styles = manifest2.inlineCss?.styles;
-  const hrefs = preparedRoutes.inlineCssHrefs;
-  if (!styles || !hrefs?.length) return void 0;
-  let css = "";
-  for (const href of hrefs) css += styles[href];
-  preparedRoutes.inlineCss = css;
-  return css;
-}
-function getInlineCssAssetForPreparedRoutes(manifest2, preparedRoutes) {
-  const css = getInlineCssForPreparedRoutes(manifest2, preparedRoutes);
-  return css === void 0 ? void 0 : createInlineCssStyleAsset(css);
-}
-function getMatchedRoutesCacheKey(matches) {
-  let cacheKey = "";
-  for (let i = 0; i < matches.length; i++) cacheKey += (i === 0 ? "" : "\0") + matches[i].routeId;
-  return cacheKey;
-}
-function getPreparedMatchedManifestRoutes(manifest2, matches, cacheKey) {
-  {
-    const cached = getManifestCache(manifest2).get(cacheKey);
-    if (cached) return cached;
-  }
-  const preparedRoutes = prepareMatchedManifestRoutes(manifest2, matches);
-  getManifestCache(manifest2).set(cacheKey, preparedRoutes);
-  return preparedRoutes;
-}
-function prepareMatchedManifestRoutes(manifest2, matches) {
-  const inlineStyles = manifest2.inlineCss?.styles;
-  const routes = {};
-  if (!inlineStyles) {
-    for (const match of matches) {
-      const route = manifest2.routes[match.routeId];
-      if (route) routes[match.routeId] = route;
-    }
-    return {
-      routes,
-      hasStrippedRoutes: false
-    };
-  }
-  const inlineCssHrefs = [];
-  const seenInlineCssHrefs = /* @__PURE__ */ new Set();
-  let hasStrippedRoutes = false;
-  for (const match of matches) {
-    const routeId = match.routeId;
-    const route = manifest2.routes[routeId];
-    if (!route) continue;
-    const nextRoute = stripInlinedStylesheetAssetsFromRoute(inlineStyles, route, inlineCssHrefs, seenInlineCssHrefs);
-    if (nextRoute !== route) hasStrippedRoutes = true;
-    routes[routeId] = nextRoute;
-  }
-  return {
-    routes,
-    hasStrippedRoutes,
-    ...inlineCssHrefs.length ? { inlineCssHrefs } : {}
-  };
-}
-function stripInlinedStylesheetAssetsFromRoute(inlineStyles, route, inlineCssHrefs, seenInlineCssHrefs) {
-  const css = route.css;
-  if (!css) return route;
-  if (css.length === 0) {
-    const nextRoute2 = { ...route };
-    delete nextRoute2.css;
-    return nextRoute2;
-  }
-  let cssLinks;
-  for (let i = 0; i < css.length; i++) {
-    const link = css[i];
-    const href = getStylesheetHref(link);
-    if (inlineStyles[href] === void 0) {
-      if (cssLinks) cssLinks.push(link);
-      continue;
-    }
-    if (!seenInlineCssHrefs.has(href)) {
-      seenInlineCssHrefs.add(href);
-      inlineCssHrefs.push(href);
-    }
-    if (!cssLinks) cssLinks = css.slice(0, i);
-  }
-  if (!cssLinks) return route;
-  if (cssLinks.length > 0) return {
-    ...route,
-    css: cssLinks
-  };
-  const nextRoute = { ...route };
-  delete nextRoute.css;
-  return nextRoute;
-}
-function hasRouteAssets(route) {
-  return !!route.scripts?.length || !!route.css?.length;
-}
-function hasRequestAssets(assets) {
-  return !!assets && (!!assets.preloads?.length || hasRouteAssets(assets));
-}
-function mergeRequestAssetsIntoRootRoute(rootRoute, requestAssets) {
-  const preloads = requestAssets?.preloads?.length ? [...requestAssets.preloads, ...rootRoute?.preloads ?? []] : rootRoute?.preloads;
-  const scripts = requestAssets?.scripts?.length ? [...requestAssets.scripts, ...rootRoute?.scripts ?? []] : rootRoute?.scripts;
-  const cssLinks = requestAssets?.css?.length ? [...requestAssets.css, ...rootRoute?.css ?? []] : rootRoute?.css;
-  return {
-    ...rootRoute ?? {},
-    ...preloads?.length ? { preloads } : {},
-    ...scripts?.length ? { scripts } : {},
-    ...cssLinks?.length ? { css: cssLinks } : {}
-  };
-}
-function attachRouterServerSsrUtils({ router, manifest: manifest2, getRequestAssets }) {
-  router.ssr = { get manifest() {
-    if (!manifest2) return manifest2;
-    const requestAssets = getRequestAssets?.();
-    const matches = router.stores.matches.get();
-    const hasAssets = hasRequestAssets(requestAssets);
-    if (!hasAssets && !manifest2.inlineCss) return manifest2;
-    let inlineCssAsset;
-    let routes = manifest2.routes;
-    if (manifest2.inlineCss) {
-      const preparedManifest = getPreparedMatchedManifestRoutes(manifest2, matches, getMatchedRoutesCacheKey(matches));
-      inlineCssAsset = getInlineCssAssetForPreparedRoutes(manifest2, preparedManifest);
-      if (preparedManifest.hasStrippedRoutes) routes = {
-        ...manifest2.routes,
-        ...preparedManifest.routes
-      };
-    }
-    if (!hasAssets) return {
-      ...manifest2.scriptFormat ? { scriptFormat: manifest2.scriptFormat } : {},
-      ...inlineCssAsset ? { inlineStyle: inlineCssAsset } : {},
-      routes
-    };
-    const rootRoute = routes[rootRouteId];
-    return {
-      ...manifest2.scriptFormat ? { scriptFormat: manifest2.scriptFormat } : {},
-      ...inlineCssAsset ? { inlineStyle: inlineCssAsset } : {},
-      routes: {
-        ...routes,
-        [rootRouteId]: mergeRequestAssetsIntoRootRoute(rootRoute, requestAssets)
-      }
-    };
-  } };
-  let _dehydrated = false;
-  let _serializationFinished = false;
-  const renderFinishedListeners = [];
-  const serializationFinishedListeners = [];
-  const scriptBuffer = new ScriptBuffer(router);
-  let injectedHtmlBuffer = "";
-  router.serverSsr = {
-    injectHtml: (html) => {
-      if (!html) return;
-      injectedHtmlBuffer += html;
-      router.emit({ type: "onInjectedHtml" });
-    },
-    injectScript: (script) => {
-      if (!script) return;
-      const html = `<script${router.options.ssr?.nonce ? ` nonce='${router.options.ssr.nonce}'` : ""}>${script}<\/script>`;
-      router.serverSsr.injectHtml(html);
-    },
-    dehydrate: async (opts) => {
-      if (_dehydrated) {
-        invariant();
-      }
-      let matchesToDehydrate = router.stores.matches.get();
-      if (router.isShell()) matchesToDehydrate = matchesToDehydrate.slice(0, 1);
-      const matches = matchesToDehydrate.map(dehydrateMatch);
-      let manifestToDehydrate = void 0;
-      if (manifest2) {
-        const cacheKey = getMatchedRoutesCacheKey(matchesToDehydrate);
-        const preparedManifest = getPreparedMatchedManifestRoutes(manifest2, matchesToDehydrate, cacheKey);
-        manifestToDehydrate = {
-          ...manifest2.scriptFormat ? { scriptFormat: manifest2.scriptFormat } : {},
-          ...preparedManifest.inlineCssHrefs ? { inlineStyle: createInlineCssPlaceholderAsset() } : {},
-          routes: preparedManifest.routes
-        };
-        const requestAssets = opts?.requestAssets;
-        if (hasRequestAssets(requestAssets)) {
-          const existingRoot = manifestToDehydrate.routes[rootRouteId];
-          manifestToDehydrate.routes = {
-            ...manifestToDehydrate.routes,
-            [rootRouteId]: mergeRequestAssetsIntoRootRoute(existingRoot, requestAssets)
-          };
-        }
-      }
-      const dehydratedRouter = {
-        manifest: manifestToDehydrate,
-        matches
-      };
-      const lastMatchId = matchesToDehydrate[matchesToDehydrate.length - 1]?.id;
-      if (lastMatchId) dehydratedRouter.lastMatchId = dehydrateSsrMatchId(lastMatchId);
-      const dehydratedData = await router.options.dehydrate?.();
-      if (dehydratedData) dehydratedRouter.dehydratedData = dehydratedData;
-      _dehydrated = true;
-      const trackPlugins = { didRun: false };
-      const serializationAdapters = router.options.serializationAdapters;
-      const plugins = serializationAdapters ? serializationAdapters.map((t) => /* @__PURE__ */ makeSsrSerovalPlugin(t, trackPlugins)).concat(defaultSerovalPlugins) : defaultSerovalPlugins;
-      const signalSerializationComplete = () => {
-        _serializationFinished = true;
-        try {
-          serializationFinishedListeners.forEach((l) => l());
-          router.emit({ type: "onSerializationFinished" });
-        } catch (err) {
-          console.error("Serialization listener error:", err);
-        } finally {
-          serializationFinishedListeners.length = 0;
-          renderFinishedListeners.length = 0;
-        }
-      };
-      Sn(dehydratedRouter, {
-        refs: /* @__PURE__ */ new Map(),
-        plugins,
-        onSerialize: (data, initial) => {
-          let serialized = initial ? TSR_PREFIX + data : data;
-          if (trackPlugins.didRun) serialized = P_PREFIX + serialized + P_SUFFIX;
-          scriptBuffer.enqueue(serialized);
-        },
-        onError: (err) => {
-          console.error("Serialization error:", err);
-          if (err && err.stack) console.error(err.stack);
-          signalSerializationComplete();
-        },
-        scopeId: SCOPE_ID,
-        onDone: () => {
-          scriptBuffer.enqueue(GLOBAL_TSR + ".e()");
-          scriptBuffer.flush();
-          signalSerializationComplete();
-        }
-      });
-    },
-    isDehydrated() {
-      return _dehydrated;
-    },
-    isSerializationFinished() {
-      return _serializationFinished;
-    },
-    onRenderFinished: (listener) => renderFinishedListeners.push(listener),
-    onSerializationFinished: (listener) => serializationFinishedListeners.push(listener),
-    setRenderFinished: () => {
-      try {
-        renderFinishedListeners.forEach((l) => l());
-      } catch (err) {
-        console.error("Error in render finished listener:", err);
-      } finally {
-        renderFinishedListeners.length = 0;
-      }
-      scriptBuffer.liftBarrier();
-    },
-    takeBufferedScripts() {
-      const scripts = scriptBuffer.takeAll();
-      return {
-        tag: "script",
-        attrs: {
-          nonce: router.options.ssr?.nonce,
-          className: "$tsr",
-          id: TSR_SCRIPT_BARRIER_ID
-        },
-        children: scripts
-      };
-    },
-    liftScriptBarrier() {
-      scriptBuffer.liftBarrier();
-    },
-    takeBufferedHtml() {
-      if (!injectedHtmlBuffer) return;
-      const buffered = injectedHtmlBuffer;
-      injectedHtmlBuffer = "";
-      return buffered;
-    },
-    cleanup() {
-      if (!router.serverSsr) return;
-      renderFinishedListeners.length = 0;
-      serializationFinishedListeners.length = 0;
-      injectedHtmlBuffer = "";
-      scriptBuffer.cleanup();
-      router.serverSsr = void 0;
-    }
-  };
-}
-function getOrigin(request) {
-  try {
-    return new URL(request.url).origin;
-  } catch {
-  }
-  return "http://localhost";
-}
-function getNormalizedURL(url, base) {
-  if (typeof url === "string") url = url.replace("\\", "%5C");
-  const rawUrl = new URL(url, base);
-  const { path: decodedPathname, handledProtocolRelativeURL } = decodePath(rawUrl.pathname);
-  const searchParams = new URLSearchParams(rawUrl.search);
-  const normalizedHref = decodedPathname + (searchParams.size > 0 ? "?" : "") + searchParams.toString() + rawUrl.hash;
-  return {
-    url: new URL(normalizedHref, rawUrl.origin),
-    handledProtocolRelativeURL
-  };
-}
 function getStartResponseHeaders(opts) {
-  return mergeHeaders({ "Content-Type": "text/html; charset=utf-8" }, ...opts.router.stores.matches.get().map((match) => {
+  return mergeHeaders({ "Content-Type": "text/html; charset=utf-8" }, ..._getRenderedMatches(opts.router.stores.matches.get()).map((match) => {
     return match.headers;
   }));
 }
@@ -4652,7 +6223,7 @@ var getBaseManifest = getProdBaseManifest;
 var createEarlyHintsForRequest = createEarlyHintsCollector;
 async function loadEntries() {
   const [routerEntry, startEntry, pluginAdapters] = await Promise.all([
-    import("./assets/router-DJuFLFCA.js").then((n2) => n2.r),
+    import("./assets/router-DivKTyu2.js").then((n) => n.r),
     import("./assets/start-q2c1e-Sl.js"),
     import("./assets/empty-plugin-adapters-BFgPZ6_d.js")
   ]);
@@ -4703,55 +6274,145 @@ function throwRouteHandlerError() {
 function throwIfMayNotDefer() {
   throw new Error(ERR_NO_DEFER);
 }
-function isSpecialResponse(value) {
-  return value instanceof Response || isRedirect(value);
+function getResponseFromResult(result) {
+  return isSsrResponse(result) || result instanceof Response ? result : result?.response;
 }
-function handleCtxResult(result) {
-  if (isSpecialResponse(result)) return { response: result };
-  return result;
+var responseBodySources = /* @__PURE__ */ new WeakMap();
+function disposeResponseResult(result, reason) {
+  const response = getResponseFromResult(result);
+  if (isSsrResponse(response) || response instanceof Response) disposeSsrResponse(response, reason);
 }
-function executeMiddleware(middlewares, ctx) {
+function hasResponseBody(value) {
+  return value instanceof Response && value.body !== null;
+}
+function inheritsResponseOwnership(ownership, candidate) {
+  return hasResponseBody(candidate) && (candidate.body === ownership.response.body || responseBodySources.get(candidate) === ownership.response);
+}
+function disposeResponseOwnership(ownership, reason) {
+  const { response, sourceBody, streamResponse } = ownership;
+  streamResponse?.dispose(reason);
+  if (!streamResponse || response.body !== sourceBody) response.body.cancel(reason).catch(() => {
+  });
+}
+function getOwnedResponse(ownership) {
+  const { response, sourceBody, streamResponse } = ownership;
+  if (!streamResponse) return response;
+  if (streamResponse.response === response && response.body === sourceBody) return streamResponse;
+  if (response.body === sourceBody) return {
+    ...streamResponse,
+    response
+  };
+  return {
+    ...streamResponse,
+    response,
+    dispose(reason) {
+      disposeResponseOwnership(ownership, reason);
+    }
+  };
+}
+function createLateResponseDisposer(signal) {
+  return (result) => disposeResponseResult(result, signal.reason);
+}
+async function executeMiddleware(middlewares, terminal, ctx, signal, terminalNext) {
   let index = -1;
-  const next = async (nextCtx) => {
+  let responseOwnership;
+  let settled = false;
+  const disposeAbandonedResult = createLateResponseDisposer(signal);
+  const setResponse = (response) => {
+    const ssrResponse = isSsrResponse(response) ? response : void 0;
+    const streamResponse = ssrResponse?.serverSsrCleanup === "stream" ? ssrResponse : void 0;
+    const exposed = ssrResponse ? ssrResponse.response : response;
+    const current = responseOwnership;
+    if (settled) {
+      if (exposed !== ctx.response) disposeResponseResult(response, "late middleware response");
+      return;
+    }
+    if (current && current.response === exposed) current.streamResponse ??= streamResponse;
+    else if (current && inheritsResponseOwnership(current, exposed)) {
+      current.response = exposed;
+      current.streamResponse ??= streamResponse;
+    } else {
+      if (current) disposeResponseOwnership(current, "middleware response replaced");
+      if (hasResponseBody(exposed)) responseOwnership = {
+        response: exposed,
+        sourceBody: exposed.body,
+        streamResponse
+      };
+      else responseOwnership = void 0;
+    }
+    ctx.response = exposed;
+  };
+  const reconcileCtxResponse = () => {
+    if (ctx.response !== responseOwnership?.response) setResponse(ctx.response);
+  };
+  let nextPromise;
+  function next(nextCtx) {
+    const result = runNext(nextCtx);
+    nextPromise = result;
+    return result;
+  }
+  async function runNext(nextCtx) {
+    signal.throwIfAborted();
     if (nextCtx) {
       if (nextCtx.context) ctx.context = safeObjectMerge(ctx.context, nextCtx.context);
-      for (const key of Object.keys(nextCtx)) if (key !== "context") ctx[key] = nextCtx[key];
+      for (const key of Object.keys(nextCtx)) if (key === "response") setResponse(nextCtx.response);
+      else if (key !== "context") ctx[key] = nextCtx[key];
     }
     index++;
-    const middleware = middlewares[index];
+    const isTerminal = index === middlewares.length;
+    const middleware = index < middlewares.length ? middlewares[index] : isTerminal ? terminal : void 0;
+    const middlewareNext = isTerminal && terminalNext ? terminalNext : next;
     if (!middleware) return ctx;
     let result;
     try {
-      result = await middleware({
+      const pending = middleware({
         ...ctx,
-        next
+        next: middlewareNext
       });
+      if (nextPromise && pending === nextPromise) {
+        nextPromise = void 0;
+        await pending;
+        if (signal.aborted) throw signal.reason;
+        return ctx;
+      } else if (!isPromise(pending)) {
+        result = pending;
+        signal.throwIfAborted();
+      } else result = await waitForReason(pending, signal, disposeAbandonedResult, disposeAbandonedResult);
     } catch (err) {
-      if (isSpecialResponse(err)) {
-        ctx.response = err;
+      reconcileCtxResponse();
+      if (signal.aborted) {
+        if (result !== void 0) disposeAbandonedResult(result);
+        if (err !== signal.reason) disposeAbandonedResult(err);
+        throw signal.reason;
+      }
+      if (err instanceof Response) {
+        setResponse(err);
         return ctx;
       }
       throw err;
     }
-    const normalized = handleCtxResult(result);
-    if (normalized) {
-      if (normalized.response !== void 0) ctx.response = normalized.response;
-      if (normalized.context) ctx.context = safeObjectMerge(ctx.context, normalized.context);
+    if (isTerminal && terminalNext && !result) throwRouteHandlerError();
+    reconcileCtxResponse();
+    if (result && result !== ctx) {
+      const response = getResponseFromResult(result);
+      if (response !== void 0 && response !== ctx.response) setResponse(response);
+      if (response !== result && result.context && result.context !== ctx.context) ctx.context = safeObjectMerge(ctx.context, result.context);
     }
     return ctx;
-  };
-  return next();
-}
-function handlerToMiddleware(handler, mayDefer = false) {
-  if (mayDefer) return handler;
-  return async (ctx) => {
-    const response = await handler({
-      ...ctx,
-      next: throwIfMayNotDefer
-    });
+  }
+  try {
+    await runNext();
+    const response = ctx.response;
     if (!response) throwRouteHandlerError();
-    return response;
-  };
+    reconcileCtxResponse();
+    if (signal.aborted) throw signal.reason;
+    settled = true;
+    return responseOwnership ? getOwnedResponse(responseOwnership) : response;
+  } catch (err) {
+    settled = true;
+    if (responseOwnership) disposeResponseOwnership(responseOwnership, signal.aborted ? signal.reason : err);
+    throw err;
+  }
 }
 function createStartHandler(cbOrOptions) {
   const handlerOptions = typeof cbOrOptions === "function" ? {} : cbOrOptions;
@@ -4762,16 +6423,25 @@ function createStartHandler(cbOrOptions) {
   const resolveManifestForRequest = finalManifestResolver.resolveCached;
   finalManifestResolver.warmup({ getBaseManifest: () => getBaseManifest() });
   const startRequestResolver = async (request, requestOpts) => {
-    let router = null;
-    let cbWillCleanup = false;
+    const signal = request.signal;
+    let router;
+    let routerPromise;
+    let responseOwnsCleanup = false;
     try {
+      signal.throwIfAborted();
       const { url, handledProtocolRelativeURL } = getNormalizedURL(request.url);
       const href = url.pathname + url.search + url.hash;
-      const origin = getOrigin(request);
+      const origin = url.origin;
       if (handledProtocolRelativeURL) return Response.redirect(url, 308);
-      const entries = await getEntries();
-      const hasStartInstance = !!entries.startEntry.startInstance;
-      const startOptions = await entries.startEntry.startInstance?.getOptions() || {};
+      const entries = await waitForReason(getEntries(), signal);
+      const isServerFnRequest = !!SERVER_FN_BASE && url.pathname.startsWith(SERVER_FN_BASE);
+      const startInstance = entries.startEntry.startInstance;
+      let startOptions;
+      if (startInstance) {
+        const pendingStartOptions = startInstance.getOptions();
+        startOptions = isPromise(pendingStartOptions) ? await waitForReason(pendingStartOptions, signal) : pendingStartOptions;
+        signal.throwIfAborted();
+      } else startOptions = {};
       const { hasPluginAdapters, pluginSerializationAdapters } = entries.pluginAdapters;
       const serializationAdapters = [
         ...startOptions.serializationAdapters || [],
@@ -4780,196 +6450,226 @@ function createStartHandler(cbOrOptions) {
       ];
       const requestStartOptions = {
         ...startOptions,
-        requestMiddleware: hasStartInstance ? startOptions.requestMiddleware : [defaultCsrfMiddleware],
+        requestMiddleware: startInstance ? startOptions.requestMiddleware : isServerFnRequest ? [defaultCsrfMiddleware] : void 0,
         serializationAdapters
       };
       const flattenedRequestMiddlewares = requestStartOptions.requestMiddleware ? flattenMiddlewares(requestStartOptions.requestMiddleware) : [];
       const executedRequestMiddlewares = new Set(flattenedRequestMiddlewares);
-      const getRouter = async () => {
-        if (router) return router;
-        router = await entries.routerEntry.getRouter();
-        let isShell = IS_SHELL_ENV;
-        if (IS_PRERENDERING && !isShell) isShell = request.headers.get(HEADERS.TSS_SHELL) === "true";
-        const history = createMemoryHistory({ initialEntries: [href] });
-        router.update({
-          history,
-          isShell,
-          isPrerendering: IS_PRERENDERING,
-          origin: router.options.origin ?? origin,
-          defaultSsr: requestStartOptions.defaultSsr,
-          serializationAdapters: [...requestStartOptions.serializationAdapters, ...router.options.serializationAdapters || []],
-          basepath: ROUTER_BASEPATH
-        });
-        return router;
+      const getRouter = () => {
+        routerPromise ??= (async () => {
+          signal.throwIfAborted();
+          const requestRouter = await waitForReason(entries.routerEntry.getRouter(), signal);
+          let isShell = IS_SHELL_ENV;
+          if (IS_PRERENDERING && !isShell) isShell = request.headers.get(HEADERS.TSS_SHELL) === "true";
+          const history = createServerHistory(href);
+          requestRouter.update({
+            history,
+            isShell,
+            isPrerendering: IS_PRERENDERING,
+            origin: requestRouter.options.origin ?? origin,
+            defaultSsr: requestStartOptions.defaultSsr,
+            serializationAdapters: [...requestStartOptions.serializationAdapters, ...requestRouter.options.serializationAdapters || []],
+            basepath: ROUTER_BASEPATH
+          });
+          router = requestRouter;
+          return requestRouter;
+        })();
+        return routerPromise;
       };
-      if (SERVER_FN_BASE && url.pathname.startsWith(SERVER_FN_BASE)) {
+      const handlerType = isServerFnRequest ? "serverFn" : "router";
+      const startContext = {
+        getRouter,
+        startOptions: requestStartOptions,
+        request,
+        executedRequestMiddlewares,
+        handlerType
+      };
+      let terminal;
+      if (isServerFnRequest) {
         if (false) ;
         const serverFnId = url.pathname.slice(SERVER_FN_BASE.length).split("/")[0];
         if (!serverFnId) throw new Error("Invalid server action param for serverFnId");
-        const serverFnHandler = async ({ context }) => {
-          return runWithStartContext({
-            getRouter,
-            startOptions: requestStartOptions,
-            contextAfterGlobalMiddlewares: context,
+        terminal = ({ context }) => runWithStartContext({
+          ...startContext,
+          contextAfterGlobalMiddlewares: context
+        }, () => handleServerAction({
+          request,
+          context: requestOpts?.context,
+          serverFnId
+        }));
+      } else {
+        const executeRouter = async (serverContext, matchedRoutes) => {
+          if (!/(^|,)\s*(\*\/\*|text\/html)/.test(request.headers.get("Accept") || "*/*")) return normalizeSsrResponse(Response.json({ error: "Only HTML requests are supported here" }, { status: 406 }));
+          const manifest2 = await waitForReason(resolveManifestForRequest({
             request,
-            executedRequestMiddlewares,
-            handlerType: "serverFn"
-          }, () => handleServerAction({
+            requestInlineCss: requestOpts?.inlineCss,
+            getBaseManifest: () => getBaseManifest(matchedRoutes)
+          }), signal);
+          const earlyHints = createEarlyHintsForRequest({
+            onEarlyHints: requestOpts?.onEarlyHints,
+            responseLinkHeader: requestOpts?.responseLinkHeader
+          });
+          earlyHints?.collectStatic({
+            manifest: manifest2,
+            matchedRoutes
+          });
+          const routerInstance = await getRouter();
+          attachRouterServerSsrUtils({
+            router: routerInstance,
+            manifest: manifest2,
+            getRequestAssets: () => getStartContext({ throwIfNotFound: false })?.requestAssets
+          });
+          routerInstance.options.additionalContext = { serverContext };
+          await routerInstance.load({ _signal: signal });
+          signal.throwIfAborted();
+          if (routerInstance._serverResult?.type === "redirect") return normalizeSsrResponse(routerInstance._serverResult.redirect);
+          earlyHints?.collectDynamic(_getRenderedMatches(routerInstance.stores.matches.get()));
+          const ctx = getStartContext({ throwIfNotFound: false });
+          await routerInstance.serverSsr.dehydrate({
+            requestAssets: ctx?.requestAssets,
+            signal
+          });
+          signal.throwIfAborted();
+          const responseHeaders = getStartResponseHeaders({ router: routerInstance });
+          earlyHints?.appendResponseHeaders(responseHeaders);
+          signal.throwIfAborted();
+          const disposeLate = createLateResponseDisposer(signal);
+          return normalizeSsrResponse(await waitForReason(cb({
             request,
-            context: requestOpts?.context,
-            serverFnId
-          }));
+            router: routerInstance,
+            responseHeaders
+          }), signal, disposeLate, disposeLate));
         };
-        return handleRedirectResponse((await executeMiddleware([...flattenedRequestMiddlewares.map((d) => d.options.server), serverFnHandler], {
-          request,
-          pathname: url.pathname,
-          handlerType: "serverFn",
-          context: createNullProtoObject(requestOpts?.context)
-        })).response, request, getRouter);
-      }
-      const executeRouter = async (serverContext, matchedRoutes) => {
-        const acceptParts = (request.headers.get("Accept") || "*/*").split(",");
-        if (!["*/*", "text/html"].some((mimeType) => acceptParts.some((part) => part.trim().startsWith(mimeType)))) return Response.json({ error: "Only HTML requests are supported here" }, { status: 500 });
-        const manifest2 = await resolveManifestForRequest({
-          request,
-          requestInlineCss: requestOpts?.inlineCss,
-          getBaseManifest: () => getBaseManifest(matchedRoutes)
-        });
-        const earlyHints = createEarlyHintsForRequest({
-          onEarlyHints: requestOpts?.onEarlyHints,
-          responseLinkHeader: requestOpts?.responseLinkHeader
-        });
-        earlyHints?.collectStatic({
-          manifest: manifest2,
-          matchedRoutes
-        });
-        const routerInstance = await getRouter();
-        attachRouterServerSsrUtils({
-          router: routerInstance,
-          manifest: manifest2,
-          getRequestAssets: () => getStartContext({ throwIfNotFound: false })?.requestAssets
-        });
-        routerInstance.update({ additionalContext: { serverContext } });
-        await routerInstance.load();
-        if (routerInstance.state.redirect) return routerInstance.state.redirect;
-        earlyHints?.collectDynamic(routerInstance.stores.matches.get());
-        const ctx = getStartContext({ throwIfNotFound: false });
-        await routerInstance.serverSsr.dehydrate({ requestAssets: ctx?.requestAssets });
-        const responseHeaders = getStartResponseHeaders({ router: routerInstance });
-        earlyHints?.appendResponseHeaders(responseHeaders);
-        cbWillCleanup = true;
-        return cb({
-          request,
-          router: routerInstance,
-          responseHeaders
-        });
-      };
-      const requestHandlerMiddleware = async ({ context }) => {
-        return runWithStartContext({
+        terminal = ({ context }) => runWithStartContext({
+          ...startContext,
+          contextAfterGlobalMiddlewares: context
+        }, () => handleServerRoutes({
           getRouter,
-          startOptions: requestStartOptions,
-          contextAfterGlobalMiddlewares: context,
           request,
-          executedRequestMiddlewares,
-          handlerType: "router"
-        }, async () => {
-          try {
-            return await handleServerRoutes({
-              getRouter,
-              request,
-              url,
-              executeRouter,
-              context,
-              executedRequestMiddlewares
-            });
-          } catch (err) {
-            if (err instanceof Response) return err;
-            throw err;
-          }
-        });
-      };
-      return handleRedirectResponse((await executeMiddleware([...flattenedRequestMiddlewares.map((d) => d.options.server), requestHandlerMiddleware], {
+          url,
+          executeRouter,
+          context,
+          executedRequestMiddlewares
+        }));
+      }
+      const middlewareResponse = await executeMiddleware(flattenedRequestMiddlewares.map((d) => d.options.server), terminal, {
         request,
         pathname: url.pathname,
-        handlerType: "router",
+        handlerType,
         context: createNullProtoObject(requestOpts?.context)
-      })).response, request, getRouter);
+      }, signal);
+      let result;
+      try {
+        result = await handleRedirectResponse(middlewareResponse, getRouter, signal, isServerFnRequest && request.headers.get("x-tsr-serverFn") === "true");
+        if (request.method === "HEAD") result = stripSsrResponseBody(result, "HEAD body stripped");
+      } catch (error) {
+        disposeResponseResult(middlewareResponse, signal.aborted ? signal.reason : error);
+        throw error;
+      }
+      bindSsrResponseToRequest(router, result, signal);
+      signal.throwIfAborted();
+      responseOwnsCleanup = result.serverSsrCleanup === "stream";
+      return result.response;
     } finally {
-      if (router && !cbWillCleanup) router.serverSsr?.cleanup();
-      router = null;
+      if (router?.serverSsr && !responseOwnsCleanup) router.serverSsr.cleanup();
     }
   };
   return requestHandler(startRequestResolver);
 }
-async function handleRedirectResponse(response, request, getRouter) {
-  if (!isRedirect(response)) return response;
-  if (isResolvedRedirect(response)) {
-    if (request.headers.get("x-tsr-serverFn") === "true") return Response.json({
-      ...response.options,
-      isSerializedRedirect: true
-    }, { headers: response.headers });
-    return response;
-  }
-  const opts = response.options;
-  if (opts.to && typeof opts.to === "string" && !opts.to.startsWith("/")) throw new Error(`Server side redirects must use absolute paths via the 'href' or 'to' options. The redirect() method's "to" property accepts an internal path only. Use the "href" property to provide an external URL. Received: ${JSON.stringify(opts)}`);
-  if ([
+var relativeRedirectProtocols = /* @__PURE__ */ new Set();
+async function handleRedirectResponse(response, getRouter, signal, serializeRedirect) {
+  signal.throwIfAborted();
+  const ssrResponse = normalizeSsrResponse(response);
+  const redirect = ssrResponse.response;
+  if (!isRedirect(redirect)) return ssrResponse;
+  const opts = redirect.options;
+  const href = redirect.headers.get("Location") || opts.href;
+  if (!href && opts.to && typeof opts.to === "string" && !opts.to.startsWith("/")) throw new Error(`Server side redirects must use absolute paths via the 'href' or 'to' options. The redirect() method's "to" property accepts an internal path only. Use the "href" property to provide an external URL. Received: ${JSON.stringify(opts)}`);
+  if (!href && [
     "params",
     "search",
     "hash"
   ].some((d) => typeof opts[d] === "function")) throw new Error(`Server side redirects must use static search, params, and hash values and do not support functional values. Received functional values for: ${Object.keys(opts).filter((d) => typeof opts[d] === "function").map((d) => `"${d}"`).join(", ")}`);
-  const redirect = (await getRouter()).resolveRedirect(response);
-  if (request.headers.get("x-tsr-serverFn") === "true") return Response.json({
-    ...response.options,
-    isSerializedRedirect: true
-  }, { headers: response.headers });
-  return redirect;
+  signal.throwIfAborted();
+  if (href && !isDangerousProtocol(href, relativeRedirectProtocols)) {
+    opts.href = href;
+    redirect.headers.set("Location", href);
+  } else {
+    const router = await getRouter();
+    signal.throwIfAborted();
+    router.resolveRedirect(redirect);
+  }
+  if (serializeRedirect) {
+    const redirectOptions = { ...opts };
+    delete redirectOptions.headers;
+    const responseHeaders = new Headers(redirect.headers);
+    responseHeaders.set("content-type", "application/json");
+    return replaceSsrResponse(ssrResponse, Response.json({
+      ...redirectOptions,
+      isSerializedRedirect: true
+    }, { headers: responseHeaders }), "redirect response replaced");
+  }
+  return ssrResponse;
+}
+function withParsedParams(handler, matchedRoutes) {
+  if (!matchedRoutes.some((route) => route.options.params?.parse ?? route.options.parseParams)) return handler;
+  return (ctx) => {
+    const params = Object.assign(/* @__PURE__ */ Object.create(null), ctx.params);
+    for (const route of matchedRoutes) {
+      const parse = route.options.params?.parse ?? route.options.parseParams;
+      if (parse) Object.assign(params, parse(params));
+    }
+    return handler({
+      ...ctx,
+      params
+    });
+  };
 }
 async function handleServerRoutes({ getRouter, request, url, executeRouter, context, executedRequestMiddlewares }) {
   const router = await getRouter();
   const pathname = executeRewriteInput(router.rewrite, url).pathname;
-  const { matchedRoutes, foundRoute, routeParams } = router.getMatchedRoutes(pathname);
-  const isExactMatch = foundRoute && routeParams["**"] === void 0;
+  const [matchedRoutes, rawParams, foundRoute] = router.getMatchedRoutes(pathname);
+  const isExactMatch = foundRoute && rawParams["**"] === void 0;
   const routeMiddlewares = [];
+  let terminalHandler = (ctx) => executeRouter(ctx.context, matchedRoutes);
+  let terminalNext;
   for (const route of matchedRoutes) {
     const serverMiddleware = route.options.server?.middleware;
     if (serverMiddleware) {
       const flattened = flattenMiddlewares(serverMiddleware);
-      for (const m2 of flattened) if (!executedRequestMiddlewares.has(m2)) routeMiddlewares.push(m2.options.server);
+      for (const m of flattened) if (!executedRequestMiddlewares.has(m)) routeMiddlewares.push(m.options.server);
     }
   }
   const server2 = foundRoute?.options.server;
-  let isHeadFallback = false;
   if (server2?.handlers && isExactMatch) {
     const handlers = typeof server2.handlers === "function" ? server2.handlers({ createHandlers: (d) => d }) : server2.handlers;
     const requestMethod = request.method.toUpperCase();
     const handler = requestMethod === "HEAD" ? handlers["HEAD"] ?? handlers["GET"] ?? handlers["ANY"] : handlers[requestMethod] ?? handlers["ANY"];
-    isHeadFallback = requestMethod === "HEAD" && handler !== void 0 && !handlers["HEAD"];
     if (handler) {
       const mayDefer = !!foundRoute.options.component;
-      if (typeof handler === "function") routeMiddlewares.push(handlerToMiddleware(handler, mayDefer));
-      else {
+      if (typeof handler !== "function") {
         if (handler.middleware?.length) {
           const handlerMiddlewares = flattenMiddlewares(handler.middleware);
-          for (const m2 of handlerMiddlewares) routeMiddlewares.push(m2.options.server);
+          for (const m of handlerMiddlewares) routeMiddlewares.push(m.options.server);
         }
-        if (handler.handler) routeMiddlewares.push(handlerToMiddleware(handler.handler, mayDefer));
+      }
+      const routeHandler = typeof handler === "function" ? handler : handler.handler;
+      if (routeHandler) {
+        const parsedHandler = withParsedParams(routeHandler, matchedRoutes);
+        if (!mayDefer) {
+          terminalHandler = parsedHandler;
+          terminalNext = throwIfMayNotDefer;
+        } else routeMiddlewares.push(parsedHandler);
       }
     }
   }
-  routeMiddlewares.push((ctx2) => executeRouter(ctx2.context, matchedRoutes));
-  const ctx = await executeMiddleware(routeMiddlewares, {
+  return normalizeSsrResponse(await executeMiddleware(routeMiddlewares, terminalHandler, {
     request,
     context,
-    params: routeParams,
+    params: rawParams,
     pathname,
     handlerType: "router"
-  });
-  if (isHeadFallback) {
-    if (!ctx.response) throwRouteHandlerError();
-    const resolved = await handleRedirectResponse(ctx.response, request, getRouter);
-    return new Response(null, resolved);
-  }
-  return ctx.response;
+  }, request.signal, terminalNext));
 }
 const fetch = createStartHandler(defaultStreamHandler);
 function createServerEntry(entry) {

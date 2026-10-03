@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import '../styles/global.css'
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 
+import { AppBackground } from '@/components/app-background'
 import { SiteHeader } from '@/components/site-header'
 import { I18nProvider, useI18n } from '@/lib/i18n'
 import { defaultLocale, validateRootSearch } from '@/lib/locale'
@@ -34,13 +35,14 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 			<head>
 				<HeadContent />
 			</head>
-			<body className='min-h-screen bg-stone-950 text-stone-100 antialiased'>
+			<body className='min-h-screen bg-transparent text-stone-100 antialiased'>
 				<a
 					href='#main-content'
 					className='sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-full focus:bg-cyan-300 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-slate-950'>
 					{messages.site.skipToContentLabel}
 				</a>
-				<div className='relative min-h-screen'>
+				<div className='relative isolate min-h-screen overflow-x-hidden'>
+					<AppBackground />
 					<SiteHeader />
 					{children}
 				</div>
@@ -61,22 +63,24 @@ function NotFoundPage() {
 function NotFoundPageContent() {
 	const { locale } = useI18n()
 	const messages = useTranslations()
-	const { navigationLabels, notFound } = messages.site
+	const { site } = messages
+	const { navigationLabels, notFound } = site
 	const localizedSearch = { lang: locale }
-
+	const { eyebrow, title, description, goHomeLabel } = notFound
+	const { about, projects } = navigationLabels
 	return (
 		<RootDocument>
 			<main id='main-content' className='mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-3xl flex-col items-start justify-center gap-6 px-6 py-16'>
-				<p className='text-sm font-medium uppercase tracking-[0.3em] text-cyan-300'>{notFound.eyebrow}</p>
+				<p className='text-sm font-medium uppercase tracking-[0.3em] text-cyan-300'>{eyebrow}</p>
 				<div className='space-y-3'>
-					<h1 className='text-4xl font-semibold tracking-tight text-white'>{notFound.title}</h1>
-					<p className='max-w-xl text-base leading-7 text-stone-300'>{notFound.description}</p>
+					<h1 className='text-4xl font-semibold tracking-tight text-white'>{title}</h1>
+					<p className='max-w-xl text-base leading-7 text-stone-300'>{description}</p>
 				</div>
 				<div className='flex flex-wrap gap-3'>
 					{[
-						{ to: '/', label: notFound.goHomeLabel },
-						{ to: '/about', label: navigationLabels.about },
-						{ to: '/project', label: navigationLabels.projects }
+						{ to: '/', label: goHomeLabel },
+						{ to: '/about', label: about },
+						{ to: '/project', label: projects }
 					].map(link => (
 						<Link
 							key={link.to}
